@@ -67,7 +67,7 @@ def test_ellipse():
     V = 12
     x = LLopt.set_vars(dict_var = dict(
         b=b,
-        c=c,``
+        c=c,
         al=np.zeros(N_th),
         V=V
     ))
