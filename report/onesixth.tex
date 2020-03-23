@@ -1,0 +1,212 @@
+\documentclass[letterpaper,12pt]{article}
+\usepackage{tabularx} % extra features for tabular environment
+\usepackage{amsmath}  % improve math presentation
+\usepackage{graphicx} % takes care of graphic including machinery
+\graphicspath{ {images/} }
+\usepackage{float}
+\usepackage[margin=1in,letterpaper]{geometry} % decreases margins
+\usepackage{cite} % takes care of citations
+\usepackage[final]{hyperref} % adds hyper links inside the generated pdf file
+\hypersetup{
+	colorlinks=true,       % false: boxed links; true: colored links
+	linkcolor=blue,        % color of internal links
+	citecolor=blue,        % color of links to bibliography
+	filecolor=magenta,     % color of file links
+	urlcolor=blue         
+}
+
+
+\begin{document}
+
+\title{Glider Optimization with Lifting Line Theory and Airfoil Wind Tunnel Data}
+\author{Jean de Becdelievre}
+\date{\today}
+\maketitle
+
+\section{Optimization Problem}
+
+\section{Lifting Line Theory}
+
+$$\Gamma(y) = \frac{l(y)}{\rho V} = \frac{1/2 \rho V^2 c(y) c_l(y)}{\rho V} =  \frac{1}{2} V c(y) c_l(y)$$
+
+$$\theta = \frac{b}{2}\cos(\theta)$$
+
+$$\Gamma(\theta) = \frac{1}{2} V\sum_{n=1}^{+\infty} A_n \sin(n\theta) \text{,      } c_l(\theta) = \frac 1 {c(y)} \sum_{n=1}^{+\infty} A_n \sin(n\theta)$$
+
+% \begin{equation*}
+	\begin{align*}
+		\alpha_i(y) &= \frac{-1}{4\pi V}\int_{-b/2}^{b/2} \frac{\frac{d\Gamma(t)}{dt}}{y-t} dt \\ 
+		\alpha_i(\theta) &= \frac{-1}{4\pi V} \int_{\pi}^{0} \frac{\left( \frac{d\Gamma(\Theta)}{d\Theta} \frac{d\Theta}{dt}\right)}{b/2\cos(\theta)-b/2\cos(\Theta)}\frac{dt}{d\Theta} d\Theta	 \\
+				 &= -\frac{-1}{2b\pi V} \int_{0}^{\pi} \frac{\frac{d\Gamma(\Theta)}{d\Theta}}{\cos(\theta)-\cos(\Theta)} d\Theta	
+	\end{align*}
+% \end{equation*}
+
+$$\frac{d\Gamma(\Theta)}{d\Theta} = \frac{d}{d\Theta}\frac12 V\sum_{n=1}^{+\infty} A_n \sin(n\Theta)  = \frac{1}{2} V\sum_{n=1}^{+\infty} n A_n \cos(n\Theta) $$
+
+\begin{align*}
+	\alpha_i(\theta) &= -\frac{-1}{2b\pi }  \int_{0}^{\pi} \frac{ \frac{1}{2} V\sum_{n=1}^{+\infty} n A_n \cos(n\Theta) }{\cos(\theta)-\cos(\Theta)} d\Theta	\\
+				&= -\frac{-1}{4b\pi }  \sum_{n=1}^{+\infty} n A_n \int_{0}^{\pi} \frac{ \cos(n\Theta) }{\cos(\theta)-\cos(\Theta)} d\Theta	\\
+\end{align*}
+
+$$ \alpha_i(\theta) = \frac {-1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} 	$$
+
+The general equation that needs to be solved to find the $A_{1:+\infty}$ is:
+
+\begin{align*}
+	c_l(\theta) &= CL_{2D} \left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \\
+	\sum_{n=1}^{+\infty} A_n \sin(n\theta) &= c(\theta) CL_{2D} \left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \\
+\end{align*}
+
+If we only compute $A_{n}$ for $n \in [0, N_A]$, we can choose a discrete set of $\theta_k$ for $k \in [0, N_{\theta}]$:
+
+\begin{equation}
+	SA = c(\theta) CL_{2D} \left( \alpha(\theta) - \frac {1}{4b} S' A_n , Re(\theta)\right) 
+\end{equation}
+
+\section{L over D}
+
+\begin{equation*}
+	\frac L D = \frac{C_L}{C_D} = \frac {C_L} {C_{Di} + C_{D0}} 
+\end{equation*}
+
+From lifting line theory:
+
+\begin{align}
+	C_L &= \frac 1 S \int_{b/2}^{b/2} c(y) c_l(y) dy  \nonumber \\
+		&= \frac b {2S} \int_{0}^{\pi} \sum_{n=1}^{+\infty} A_n \sin(n\theta) \sin(\theta)d\theta \nonumber \\
+		& = \frac{b \pi A_1}{4S}
+\end{align}
+
+\begin{align*}
+	c_{d_i} (\theta) &= - c_l (\theta) \alpha_i (\theta) \\
+					&=  \frac{1}{4bc(\theta)}\sum_{n_a=0}^{+\infty} n_a A_{n_a} \frac{ \sin(n_a\theta) }{\sin(\theta)} \sum_{n_b=0}^{+\infty} A_{n_b} \sin(n_b\theta) \\
+\end{align*}
+
+\begin{align}
+	C_{Di} &= \frac b {2S} \int_{0}^{\pi} c_{d_i}(\theta) c(\theta) d\theta \nonumber\\
+	C_{Di} &= \frac b {2S} \int_{0}^{\pi} \frac{1}{4b}
+		\sum_{n_a=0}^{+\infty} n_a A_{n_a} \frac{ \sin(n_a\theta) }{\sin(\theta)} 
+		\sum_{n_b=0}^{+\infty} A_{n_b} \sin(n_b\theta) \sin(\theta) 
+		d\theta  \nonumber \\ 
+	C_{Di} &= \frac 1 {8S} \int_{0}^{\pi} \sum_{n_a=0}^{+\infty} \sum_{n_b=0}^{+\infty} n_a A_{n_a}A_{n_b} \sin(n_a\theta) \sin(n_b\theta) d\theta
+\end{align}
+
+Since for any $k, n$:
+
+\begin{equation*}
+	\int_0^{\pi} \sin(n\theta)\sin(k\theta)d\theta = 
+	\begin{cases} 
+		0 & k \neq n \\
+		\frac{\pi}{2} & k = n
+	 \end{cases}
+\end{equation*}
+
+we have:
+
+\begin{equation}
+	C_{Di} = \frac {\pi}{16S} \sum_{n=1}^{+\infty} n A_{n}^2
+\end{equation}
+
+Finally, $C_{D_0}$ must be computed by integration:
+
+\begin{align*}
+	c_{d_0}(\theta) &= CD0_{2D}\left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \\
+	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) CD0_{2D}\left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \sin(\theta) d\theta \\
+	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) CD0_{2D}\left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \sin(\theta) d\theta
+\end{align*}
+
+If $CD0_{2D}$ has an analytic expression, this can be simplified further.
+In this case however, it is a general function fitted from wind tunnel data, 
+therefore the integration is performed numerically with Clenshaw–Curtis quadrature. 
+
+Calling $w_{\theta}^{(k)}$ and $\theta_k$ respectively the weights and the points of this quadrature, we get:
+\begin{equation}
+	C_{D_0}(\theta) = \frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) CD0_{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
+\end{equation}
+
+Finally:
+
+\begin{align}
+	\frac L D &= \frac {C_L} 
+	{C_{Di} + C_{D0}} \nonumber \\
+	\frac L D &= \frac{\frac{b \pi A_1}{4S}}{
+		\frac {\pi}{16S} \sum_{n=1}^{+\infty} n A_{n}^2 + 
+		\frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) CD0_{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
+	} \nonumber \\
+	\frac L D &= \left(	\frac {1}{4bA_1} \sum_{n=1}^{+\infty} n A_{n}^2 + 
+		\frac {2} {\pi A_1} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) CD0_{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right) 
+	\right)^{-1} 
+\end{align}
+
+
+\section{Optimization Problem}
+
+\begin{align}
+	& \underset{V, b, c, \alpha, A}{\text{minimize}}
+	& & \left( L / D\right)^{-1} \nonumber \\
+	& \text{subject to} &  \label{llcon0}
+	c_l(\theta_k) &= CL_{2D} \left( \alpha(\theta_k) + \alpha_i(\theta_k), Re(\theta_k)\right) \\
+	& &  \label{wcon0} C_L &= \frac{W}{1/2 \rho V^2 S}
+\end{align}
+
+
+\begin{align}
+	& \underset{V, b, c, \alpha, A}{\text{minimize}}
+	& & \frac {1}{4bA_1} \sum_{n=1}^{N_A} n A_{n}^2 + \nonumber \\
+	&&& \frac 2 {\pi A_1} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k CD0_{2D}\left( 
+		\alpha_k - 
+		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
+		\right) \label{obj1} \\
+	& \text{subject to}
+	& & SA = CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
+	& &  & A_1 = \frac{2W}{\rho V^2 b \pi} \label{wcon1}
+\end{align}
+
+where it was included in \ref{llcon0} that $C_L = \frac{b \pi A_1}{4S}$.
+Using \ref{wcon0} to simplify \ref{obj1} further, we obtain:
+
+\begin{align}
+	& \underset{V, b, c, \alpha, A}{\text{minimize}}
+	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 + \nonumber \\
+	&&&  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k CD0_{2D}\left( 
+		\alpha_k - 
+		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
+		\right) \label{obj1} \\
+	& \text{subject to}
+	& & SA = CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
+	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
+\end{align}
+
+because:
+
+\begin{align*}
+	\frac{1}{4bA_1} &= \frac{\rho V^2 \pi}{8W} \\
+	\frac{\pi}{2A_1} &= \frac{\rho V^2 b}{ W} 
+\end{align*}
+
+\begin{align}
+	& \underset{V, b, c, \alpha, A}{\text{minimize}}
+	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
+	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k CD0_{2D}\left( 
+		\alpha_k - \frac {1}{4b} S' A_n, Re(\theta_k)
+		\right) \label{obj1} \\
+	& \text{subject to}
+	& & SA = CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
+	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
+\end{align}
+
+
+\begin{align}
+	& \underset{V, b, c, \alpha, \alpha_i A}{\text{minimize}}
+	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
+	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k CD0_{2D}\left( 
+		\alpha_k +\alpha_{i,k}, Re(\theta_k)
+		\right) \label{obj2} \\
+	& \text{subject to}
+	& & SA = CL_{2D} \left( \alpha_k + \alpha_{i,k} , Re(\theta_k)\right)  \label{llcon1}\\
+	& &  & A_1 \geq \frac{8W}{\rho V^2 b \pi} \label{wcon2}\\
+	& &  & \alpha_{i,k}\geq - \frac {1}{4b} S' A_n \label{aindcon2}
+\end{align}
+
+\end{document}
+\textsl{}
