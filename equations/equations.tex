@@ -15,6 +15,12 @@
 	urlcolor=blue         
 }
 
+\usepackage{ar}
+\usepackage{siunitx}
+\usepackage{longtable}
+\setlength\LTleft{0pt} 
+% \def\AR{\text{\itshape\clipbox{0pt 0pt .32em 0pt}\AE\kern-.30emR}}
+
 
 \begin{document}
 
@@ -23,16 +29,91 @@
 \date{\today}
 \maketitle
 
+\section{Nomenclature}
+
+{\renewcommand\arraystretch{1.0}
+\noindent\begin{longtable}{@{}l @{\quad : \quad} l@{}}
+$W$  & glider weight \\
+$L, C_L$ & lift, lift coefficient \\
+$D,Di,D_0, C_D,C_{Di},C_{D_0}$& drag, induced drag, friction, and respective coefficients \\
+$b$ & span \\
+$S$ & wing area \\
+$\AR$ & wing aspect ratio \\
+$y$ & spanwise coordinate, ranging from $-b/2$ to $b/2$ \\
+$\theta$ & remapped spanwise coordinate ranging from $0$ to $pi$ \\
+$N_{theta}$ & Number of spanwise sections \\
+$\Gamma(y) \text{ or } \Gamma(\theta)$ & spanwise strength of vortex sheet\\
+$A_n$ & nth coefficient of the Fourrier expansion of $\Gamma$ \\
+$N_{A}$ & Number of Fourrier coefficients considered for $\Gamma$ \\
+$S$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad S_{k,n} = \sin(n\theta_k)$ \\
+$S'$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad {S'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$ \\
+$A$ & vector of size $N_A$ containing all the $A_n$ \\
+$\alpha(y) \text{ or } \alpha(\theta)$ & spanwise angle of attack distribution\\
+$\alpha_i(y) \text{ or } \alpha_i(\theta)$ & spanwise lift-induced angle of attack distribution\\
+$c(y) \text{ or } c(\theta)$ & spanwise chord distribution\\
+$c_l(y) \text{ or } c_l(\theta)$ & spanwise lift distribution\\
+$c_d(y) \text{ or } c_d(\theta)$ & spanwise drag distribution\\
+$V$ & airspeed \\
+$CL_{2D} \text{ and } CD0_{2D}$ & fit of the 2D airfoil data \\
+$Re$ & Reynolds number \\
+$y_k, \theta_k, \alpha_k, \alpha_{i_k}, c_k, c_{l_k}$ &  $y, \theta, \alpha, \alpha_i, c, c_{l}$ at the kth section of the span\\
+\end{longtable}}
+
+
 \section{Optimization Problem}
+
+This code aims at optimizing the wing shape and airspeed of a glider of a given weight W and fixed airfoil section.
+2D wind tunnel data of the airfoil is available: the functions
+$C_{L2D}(\alpha, Re)$ and 
+$C_{D02D}(\alpha, Re)$ are provided.
+
+The optimization problem reads:
+
+\begin{align*}
+	& \underset{V, b, c, \alpha, A}{\text{minimize}}
+	& & \left( C_L / (C_{D_i} + C_{D_0})\right)^{-1} \nonumber \\
+	& \text{subject to} 
+	&   c_l(y) &= CL_{2D} \left( \alpha(\theta) + \alpha_i(y), Re(y)\right) \\
+	& & c_{d_0} &= CD0_{2D}(\alpha - \alpha_i, Re(y)) \\
+	& & C_L &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_l(y') dy'\\
+	& & C_{D_0} &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_{d_0}(y') dy'\\
+	& & C_{D_i} & = \frac{C_L}{\pi \AR \epsilon} \\
+	& & \AR &= \frac{b^2}{S} \\
+	& & \epsilon &= \left(\sum_{n=1}^{N_A} n \left(\frac{A_n}{A_1}\right)^2 \right)^{-1} \\
+	& & \alpha_i(y) &= -\frac 1 {4b} \sum_{n=1}^{N_A} n A_n\frac{\sin(n\theta)}{\sin(\theta)} \\
+	& \forall \theta \in [0, \pi] & \sum_{n=1}^{N_A} A_n \sin(\theta) &= \frac{1}{c(\theta)} CL_{2D} \left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \\
+\end{align*}
+
+where $\theta$ is another span parametrization such that:
+$$\forall \theta \in [0,\pi], \forall y \in [\frac {-b} 2, \frac b 2], \quad y = \frac b 2 \cos\theta$$
+
+We discretize the span into $N_{theta}$ spanwise sections, and perform several simplifications detailed below, such that the final optimizing problem is:
+
+\begin{align*}
+	& \underset{V, b, c, \alpha, A}{\text{minimize}}
+	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
+	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k CD0_{2D}\left( 
+		\alpha_k +\alpha_{i_k}, Re(c_k, v_k)
+		\right) \\
+	& \text{subject to}
+	&  \sum_{n=1}^{N_{A}} S_{k,n} A_n &=  c_kCL_{2D} \left( \alpha_k - \frac {1}{4b} 
+		\sum_{n=1}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)\right) \quad \text{for } k \in 1,\dots, N_{\theta} \\
+	& &  A_1 &= \frac{8W}{\rho V^2 b \pi}\\
+\end{align*}
 
 \section{Lifting Line Theory}
 
+From Kutta-Joukovsky theorem:
+%
 $$\Gamma(y) = \frac{l(y)}{\rho V} = \frac{1/2 \rho V^2 c(y) c_l(y)}{\rho V} =  \frac{1}{2} V c(y) c_l(y)$$
 
-$$\theta = \frac{b}{2}\cos(\theta)$$
-
+The spanwise circulation is defined on a compact $[-b/2, b/2]$, which we remap to $[0, \pi]$ and write a Fourrier series expansion:
+$$y = \frac{b}{2}\cos(\theta)$$
+%
 $$\Gamma(\theta) = \frac{1}{2} V\sum_{n=1}^{+\infty} A_n \sin(n\theta) \text{,      } c_l(\theta) = \frac 1 {c(y)} \sum_{n=1}^{+\infty} A_n \sin(n\theta)$$
 
+Using Biot and Savart law, the induced angle of attack on at each spanwise coordinate can be written as:
+%
 % \begin{equation*}
 	\begin{align*}
 		\alpha_i(y) &= \frac{-1}{4\pi V}\int_{-b/2}^{b/2} \frac{\frac{d\Gamma(t)}{dt}}{y-t} dt \\ 
@@ -48,20 +129,29 @@ $$\frac{d\Gamma(\Theta)}{d\Theta} = \frac{d}{d\Theta}\frac12 V\sum_{n=1}^{+\inft
 				&= -\frac{-1}{4b\pi }  \sum_{n=1}^{+\infty} n A_n \int_{0}^{\pi} \frac{ \cos(n\Theta) }{\cos(\theta)-\cos(\Theta)} d\Theta	\\
 \end{align*}
 
+Directly plugging in the solution of the Glauert integral:
 $$ \alpha_i(\theta) = \frac {-1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} 	$$
 
 The general equation that needs to be solved to find the $A_{1:+\infty}$ is:
-
+%
 \begin{align*}
 	c_l(\theta) &= CL_{2D} \left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \\
 	\sum_{n=1}^{+\infty} A_n \sin(n\theta) &= c(\theta) CL_{2D} \left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \\
 \end{align*}
-
+%
 If we only compute $A_{n}$ for $n \in [0, N_A]$, we can choose a discrete set of $\theta_k$ for $k \in [0, N_{\theta}]$:
 
 \begin{equation}
-	SA = c(\theta) CL_{2D} \left( \alpha(\theta) - \frac {1}{4b} S' A_n , Re(\theta)\right) 
+	SA = c(\theta) CL_{2D} \left( \alpha(\theta) - \frac {1}{4b} S' A , Re(\theta)\right) 
 \end{equation}
+
+with:
+\begin{itemize}
+	\item[] $S$ a matrix of size $N_{\theta}, N_A$ such that: $ \forall m,n \quad S_{m,n} = \sin(n\theta_m)$ 
+	\item[] $S'$ a matrix of size $N_{\theta}, N_A$ such that: $ \forall m,n \quad {S'}_{m,n} = n\sin(n\theta_m)/\sin(\theta_m)$ 
+	\item[] $A$ a vector of size $N_A$ containing all the $A_n$
+\end{itemize}
+
 
 \section{L over D}
 
@@ -69,30 +159,14 @@ If we only compute $A_{n}$ for $n \in [0, N_A]$, we can choose a discrete set of
 	\frac L D = \frac{C_L}{C_D} = \frac {C_L} {C_{Di} + C_{D0}} 
 \end{equation*}
 
-From lifting line theory:
+Let us start with $C_L$:
 
 \begin{align}
 	C_L &= \frac 1 S \int_{b/2}^{b/2} c(y) c_l(y) dy  \nonumber \\
-		&= \frac b {2S} \int_{0}^{\pi} \sum_{n=1}^{+\infty} A_n \sin(n\theta) \sin(\theta)d\theta \nonumber \\
-		& = \frac{b \pi A_1}{4S}
+		&= \frac b {2S} \int_{0}^{\pi} \sum_{n=1}^{+N_A} A_n \sin(n\theta) \sin(\theta)d\theta \nonumber \\
+		&= \frac b {2S}  \sum_{n=1}^{+N_A} A_n \int_{0}^{\pi} \sin(n\theta) \sin(\theta)d\theta \nonumber \\
 \end{align}
-
-\begin{align*}
-	c_{d_i} (\theta) &= - c_l (\theta) \alpha_i (\theta) \\
-					&=  \frac{1}{4bc(\theta)}\sum_{n_a=0}^{+\infty} n_a A_{n_a} \frac{ \sin(n_a\theta) }{\sin(\theta)} \sum_{n_b=0}^{+\infty} A_{n_b} \sin(n_b\theta) \\
-\end{align*}
-
-\begin{align}
-	C_{Di} &= \frac b {2S} \int_{0}^{\pi} c_{d_i}(\theta) c(\theta) d\theta \nonumber\\
-	C_{Di} &= \frac b {2S} \int_{0}^{\pi} \frac{1}{4b}
-		\sum_{n_a=0}^{+\infty} n_a A_{n_a} \frac{ \sin(n_a\theta) }{\sin(\theta)} 
-		\sum_{n_b=0}^{+\infty} A_{n_b} \sin(n_b\theta) \sin(\theta) 
-		d\theta  \nonumber \\ 
-	C_{Di} &= \frac 1 {8S} \int_{0}^{\pi} \sum_{n_a=0}^{+\infty} \sum_{n_b=0}^{+\infty} n_a A_{n_a}A_{n_b} \sin(n_a\theta) \sin(n_b\theta) d\theta
-\end{align}
-
-Since for any $k, n$:
-
+Since the Fourrier basis is orthogonal, we have for any $k, n$:
 \begin{equation*}
 	\int_0^{\pi} \sin(n\theta)\sin(k\theta)d\theta = 
 	\begin{cases} 
@@ -100,28 +174,48 @@ Since for any $k, n$:
 		\frac{\pi}{2} & k = n
 	 \end{cases}
 \end{equation*}
+Therefore:
+\begin{equation*}
+	C_L = \frac{b \pi A_1}{4S}
+\end{equation*}
 
-we have:
 
+
+\noindent Now, to get $C_{Di}$, we look at it's spanwise distribution $c_{d_i}$:
+\begin{align*}
+	c_{d_i} (\theta) &= - c_l (\theta) \alpha_i (\theta) \\
+					&=  \frac{1}{4bc(\theta)}\sum_{n_a=0}^{+\infty} n_a A_{n_a} \frac{ \sin(n_a\theta) }{\sin(\theta)} \sum_{n_b=0}^{+\infty} A_{n_b} \sin(n_b\theta) \\
+\end{align*}
+Integrating to get $C_{Di}$:
+\begin{align}
+	C_{Di} &= \frac b {2S} \int_{0}^{\pi} c_{d_i}(\theta) c(\theta) d\theta \nonumber\\
+	C_{Di} &= \frac b {2S} \int_{0}^{\pi} \frac{1}{4b}
+		\sum_{n_a=0}^{N_A} n_a A_{n_a} \frac{ \sin(n_a\theta) }{\sin(\theta)} 
+		\sum_{n_b=0}^{N_A} A_{n_b} \sin(n_b\theta) \sin(\theta) 
+		d\theta  \nonumber \\ 
+	C_{Di} &= \frac 1 {8S} \int_{0}^{\pi} \sum_{n_a=0}^{N_A} \sum_{n_b=0}^{N_A} n_a A_{n_a}A_{n_b} \sin(n_a\theta) \sin(n_b\theta) d\theta
+\end{align}
+Using again that the Fourrier basis functions are orthogonal, we obtain:
+%
 \begin{equation}
-	C_{Di} = \frac {\pi}{16S} \sum_{n=1}^{+\infty} n A_{n}^2
+	C_{Di} = \frac {\pi}{16S} \sum_{n=1}^{N_A} n A_{n}^2
 \end{equation}
-
-Finally, $C_{D_0}$ must be computed by integration:
-
+%
+Finally, $C_{D_0}$ is also obtained by integration:
+%
 \begin{align*}
 	c_{d_0}(\theta) &= CD0_{2D}\left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \\
 	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) CD0_{2D}\left( \alpha(\theta) + \alpha_i(\theta), Re(\theta)\right) \sin(\theta) d\theta \\
-	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) CD0_{2D}\left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \sin(\theta) d\theta
+	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) CD0_{2D}\left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \sin(\theta) d\theta
 \end{align*}
 
 If $CD0_{2D}$ has an analytic expression, this can be simplified further.
-In this case however, it is a general function fitted from wind tunnel data, 
+In the our case however, it is a general function fitted from wind tunnel data, 
 therefore the integration is performed numerically with Clenshaw–Curtis quadrature. 
 
 Calling $w_{\theta}^{(k)}$ and $\theta_k$ respectively the weights and the points of this quadrature, we get:
 \begin{equation}
-	C_{D_0}(\theta) = \frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) CD0_{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
+	C_{D_0}(\theta) = \frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) CD0_{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
 \end{equation}
 
 Finally:
@@ -145,7 +239,7 @@ Finally:
 	& \underset{V, b, c, \alpha, A}{\text{minimize}}
 	& & \left( L / D\right)^{-1} \nonumber \\
 	& \text{subject to} &  \label{llcon0}
-	c_l(\theta_k) &= CL_{2D} \left( \alpha(\theta_k) + \alpha_i(\theta_k), Re(\theta_k)\right) \\
+	c_l(\theta_k) &= c(\theta_k) CL_{2D} \left( \alpha(\theta_k) + \alpha_i(\theta_k), Re(\theta_k)\right) \\
 	& &  \label{wcon0} C_L &= \frac{W}{1/2 \rho V^2 S}
 \end{align}
 
@@ -158,7 +252,7 @@ Finally:
 		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
 		\right) \label{obj1} \\
 	& \text{subject to}
-	& & SA = CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
+	& & SA =  c(\theta_k)CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
 	& &  & A_1 = \frac{2W}{\rho V^2 b \pi} \label{wcon1}
 \end{align}
 
@@ -173,7 +267,7 @@ Using \ref{wcon0} to simplify \ref{obj1} further, we obtain:
 		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
 		\right) \label{obj1} \\
 	& \text{subject to}
-	& & SA = CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
+	& & SA =  c(\theta_k)CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
 	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
 \end{align}
 
@@ -191,7 +285,7 @@ because:
 		\alpha_k - \frac {1}{4b} S' A_n, Re(\theta_k)
 		\right) \label{obj1} \\
 	& \text{subject to}
-	& & SA = CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
+	& & SA =  c(\theta_k)CL_{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
 	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
 \end{align}
 
@@ -200,12 +294,12 @@ because:
 	& \underset{V, b, c, \alpha, \alpha_i A}{\text{minimize}}
 	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
 	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k CD0_{2D}\left( 
-		\alpha_k +\alpha_{i,k}, Re(\theta_k)
+		\alpha_k +\alpha_{i_k}, Re(\theta_k)
 		\right) \label{obj2} \\
 	& \text{subject to}
-	& & SA = CL_{2D} \left( \alpha_k + \alpha_{i,k} , Re(\theta_k)\right)  \label{llcon1}\\
+	& & SA =  c(\theta_k)CL_{2D} \left( \alpha_k + \alpha_{i_k} , Re(\theta_k)\right)  \label{llcon1}\\
 	& &  & A_1 \geq \frac{8W}{\rho V^2 b \pi} \label{wcon2}\\
-	& &  & \alpha_{i,k}\geq - \frac {1}{4b} S' A_n \label{aindcon2}
+	& &  & \alpha_{i_k}\geq - \frac {1}{4b} S' A_n \label{aindcon2}
 \end{align}
 
 \end{document}
