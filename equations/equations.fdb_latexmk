@@ -1,7 +1,7 @@
 # Fdb version 3
-["pdflatex"] 1584981608 "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.tex" "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.pdf" "equations" 1584981622
-  "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.aux" 1584981609 2155 e653a1ed9dc0ba2c3e87fe75ed91c7ae ""
-  "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.tex" 1584981621 13833 25d5af392660ae5a4db2ade2823887a0 ""
+["pdflatex"] 1584983086 "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.tex" "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.pdf" "equations" 1584983087
+  "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.aux" 1584983087 1774 2d8f3df01aa9be1f5c4e696d32a1aebc ""
+  "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.tex" 1584983085 15862 864698af8bd4ca36af544223b94c9885 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/map/fontname/texfonts.map" 1511824771 3332 103109f5612ad95229751940c61aada0 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1480098698 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2018/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1480098698 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -97,13 +97,13 @@
   "/usr/local/texlive/2018/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1523934492 2717033 f61a5287d9c22a39a74f1979fe3f905c ""
   "/usr/local/texlive/2018/texmf-var/web2c/pdftex/pdflatex.fmt" 1523934516 4220280 10cab8fbd7c5a7c52aba9917e190d018 ""
   "/usr/local/texlive/2018/texmf.cnf" 1523934483 577 0b39adfd7c93507ff20c9c14c2f1a33f ""
-  "equations.aux" 1584981609 2155 e653a1ed9dc0ba2c3e87fe75ed91c7ae ""
-  "equations.out" 1584981609 254 62110959de931e59a9cc31b6b85cdd31 ""
-  "equations.tex" 1584981621 13833 25d5af392660ae5a4db2ade2823887a0 ""
+  "equations.aux" 1584983087 1774 2d8f3df01aa9be1f5c4e696d32a1aebc ""
+  "equations.out" 1584983087 254 62110959de931e59a9cc31b6b85cdd31 ""
+  "equations.tex" 1584983085 15862 864698af8bd4ca36af544223b94c9885 ""
   (generated)
-  "equations.pdf"
-  "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.log"
-  "equations.aux"
+  "equations.log"
   "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.pdf"
   "equations.out"
-  "equations.log"
+  "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.log"
+  "equations.aux"
+  "equations.pdf"

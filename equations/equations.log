@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.19 (TeX Live 2018) (preloaded format=pdflatex 2018.4.16)  23 MAR 2020 17:40
+This is pdfTeX, Version 3.14159265-2.6-1.40.19 (TeX Live 2018) (preloaded format=pdflatex 2018.4.16)  23 MAR 2020 18:04
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -584,29 +584,7 @@ Package: longtable 2014/10/28 v4.11 Multi-page Table package (DPC)
 \c@LT@tables=\count290
 \c@LT@chunks=\count291
 \LT@p@ftn=\toks25
-) (/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.aux
-
-LaTeX Warning: Label `obj1' multiply defined.
-
-
-LaTeX Warning: Label `llcon1' multiply defined.
-
-
-LaTeX Warning: Label `wcon1' multiply defined.
-
-
-LaTeX Warning: Label `obj1' multiply defined.
-
-
-LaTeX Warning: Label `llcon1' multiply defined.
-
-
-LaTeX Warning: Label `wcon1' multiply defined.
-
-
-LaTeX Warning: Label `llcon1' multiply defined.
-
-)
+) (/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.aux)
 \openout1 = `equations.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 25.
@@ -796,38 +774,38 @@ Overfull \hbox (20.9889pt too wide) in alignment at lines 56--60
 [1
 
 {/usr/local/texlive/2018/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] [2] [3] [4]
-Overfull \hbox (2.01465pt too wide) detected at line 233
+Overfull \hbox (2.01465pt too wide) detected at line 239
 []
  []
 
 [5] [6]
-Package atveryend Info: Empty hook `BeforeClearDocument' on input line 305.
- [7]
-Package atveryend Info: Empty hook `AfterLastShipout' on input line 305.
+Overfull \hbox (63.2577pt too wide) detected at line 349
+[]
+ []
+
+Package atveryend Info: Empty hook `BeforeClearDocument' on input line 351.
+[7]
+Package atveryend Info: Empty hook `AfterLastShipout' on input line 351.
  (/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.aux)
-Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 305.
-Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 305.
+Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 351.
+Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 351.
 Package rerunfilecheck Info: File `equations.out' has not changed.
 (rerunfilecheck)             Checksum: 62110959DE931E59A9CC31B6B85CDD31;254.
-
-
-LaTeX Warning: There were multiply-defined labels.
-
-Package atveryend Info: Empty hook `AtVeryVeryEnd' on input line 305.
+Package atveryend Info: Empty hook `AtVeryVeryEnd' on input line 351.
  ) 
 Here is how much of TeX's memory you used:
- 17124 strings out of 492649
- 333528 string characters out of 6129622
- 400303 words of memory out of 5000000
- 20863 multiletter control sequences out of 15000+600000
+ 17118 strings out of 492649
+ 333437 string characters out of 6129622
+ 400304 words of memory out of 5000000
+ 20865 multiletter control sequences out of 15000+600000
  538825 words of font info for 57 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  32i,13n,36p,10467b,729s stack positions out of 5000i,500n,10000p,200000b,80000s
 </usr/local/texlive/2018/texmf-dist/fonts/type1/public/aspectratio/ar12.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi12.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmr17.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb>
-Output written on "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.pdf" (7 pages, 142184 bytes).
+Output written on "/Users/jeandebecdelievre/Box Sync/recherche/design/analysis/lifting_line/equations/equations.pdf" (7 pages, 142936 bytes).
 PDF statistics:
- 140 PDF objects out of 1000 (max. 8388607)
- 117 compressed objects within 2 object streams
- 35 named destinations out of 1000 (max. 500000)
+ 135 PDF objects out of 1000 (max. 8388607)
+ 112 compressed objects within 2 object streams
+ 27 named destinations out of 1000 (max. 500000)
  41 words of extra memory for PDF output out of 10000 (max. 10000000)
 
