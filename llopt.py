@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize, Bounds, NonlinearConstraint, LinearConstraint
 import torch
 import quadpy
+from abc import ABC, abstractmethod 
 
 rho = 1.225
 pi = np.pi
@@ -40,8 +41,69 @@ def quadrature_weights(N_th):
     theta_pts = np.arccos(pts)
     return w_th, theta_pts
 
+class AbstractLLopt(ABC):
+    def __init__(self, W, N_A=5, N_th=10, 
+                cd0_model = "flat_plate", 
+                cl_model = "flat_plate",
+                bounds=None):
+        assert N_A <= N_th - 2, \
+            f"Insufficient number of spanwise points ({N_th}) to solve lift distribution to {N_A}th order"
+        assert 2*int(N_th/2) + 1 == N_th, f"N_th ({N_th}) must be an odd number"
+        self.W = W
+        self.N_A = int(N_A)
+        self.N_th = (N_th)
+        # x = [V, b, c, alpha, A]
+        self.Nx = int(2 + 2 * N_th + N_A)
 
-class LiftingLineOpt():
+        self.w_th, self.theta_pts = quadrature_weights(N_th)
+        self.Sa, self.Sa_, self.Nn = ll_equation(self.theta_pts, N_A)
+
+        self.cd0_model = cd0_model
+        self.cl_model = cl_model
+
+        self.bounds = None
+        self.update_bounds(bounds)
+
+    def optimize(self, x0, alg='COBYLA', options={}):
+        pass
+
+    def obj(self, x):
+        pass
+
+    def alpha_i(self, b, A):
+        return 1/(4*b) * self.Sa_ @ A
+
+    def CL_2D(self, al):
+        if self.cl_model=="flat_plate":
+            return 2*pi*al # flat plate
+        else:
+            raise NotImplementedError
+
+    def CD0_2D(self, V, c, al):
+        if self.cd0_model=="flat_plate":
+            Re = RE(V, c)
+            return 0.074/Re**(1/5) # flat plate
+        elif self.cd0_model=="constant":
+            return 0.01
+        else:
+            raise NotImplementedError
+
+    def initial_guess(self, dict_var=None):
+        pass
+
+    def get_vars(self, x, dic=False):
+        pass
+
+    def set_vars(self, dict_var, x=None):
+        pass
+
+    def get_plane(self, x):
+        pass
+
+    def update_bounds(self, bounds):
+        pass
+
+class LiftingLineOpt(AbstractLLopt):
     def __init__(self, W, N_A=5, N_th=10, 
                 cd0_model = "flat_plate", 
                 cl_model = "flat_plate",
@@ -130,7 +192,7 @@ class LiftingLineOpt():
         V, b, c, al, A = self.get_vars(x)
         L = A[0]
         al_i = self.alpha_i(b, A)
-        D = 2 / pi * (self.w_th.T @ (c*self.CD0_2D(V,c, al + al_i))) + \
+        D = 2 / pi * (self.w_th.T @ (c*self.CD0_2D(V,c, al - al_i))) + \
             1/ (4*b) * (self.Nn * A).T @ A
         return D / L
 
@@ -143,10 +205,10 @@ class LiftingLineOpt():
         # equal 0
         V, b, c, al, A = self.get_vars(x)
         al_i = self.alpha_i(b, A)
-        return (self.Sa @ A -  c * self.CL_2D(al + al_i))[1:-1]
+        return (self.Sa @ A -  c * self.CL_2D(al - al_i))[1:-1]
    
     def alpha_i(self, b, A):
-        return - 1/(4*b) * self.Sa_ @ A
+        return 1/(4*b) * self.Sa_ @ A
 
     def CL_2D(self, al):
         if self.cl_model=="flat_plate":
@@ -229,6 +291,116 @@ class LiftingLineOpt():
         else:
             self.bounds.ub = self.set_vars(bounds["ub"], self.bounds.ub)
             self.bounds.lb = self.set_vars(bounds["lb"], self.bounds.lb)  
+
+
+class UnconstrainedLLopt(LiftingLineOpt):
+    def __init__(self, W, N_A=5, N_th=10, 
+                cd0_model = "flat_plate", 
+                cl_model = "flat_plate",
+                bounds=None):
+        assert N_A <= N_th - 2, \
+            f"Insufficient number of spanwise points ({N_th}) to solve lift distribution to {N_A}th order"
+        assert 2*int(N_th/2) + 1 == N_th, f"N_th ({N_th}) must be an odd number"
+        self.W = W
+        self.N_A = int(N_A)
+        self.N_th = (N_th)
+        # x = [V, b, c, alpha]
+        self.Nx = int(2 + 2 * N_th + N_A)
+
+        self.w_th, self.theta_pts = quadrature_weights(N_th)
+        self.Sa, self.Sa_, self.Nn = ll_equation(self.theta_pts, N_A)
+
+        self.cd0_model = cd0_model
+        self.cl_model = cl_model
+
+        self.bounds = None
+        self.update_bounds(bounds)
+
+    # def optimize(self, x0, alg='COBYLA', options={}):
+    #     opt = {'verbose': 1}
+    #     opt.update(options)
+    #     res = minimize(self.obj, x0, 
+    #                 method=alg,
+    #                 options=opt, 
+    #                 bounds=self.bounds)
+    #     return res
+    def optimize(self, x0, alg='COBYLA', options={}):
+        opt = {'verbose': 1}
+        opt.update(options)
+        if alg in "COBYLA":
+            lb = {
+                "type":"ineq",
+                "fun": lambda x: x - self.bounds.lb # positive
+            }
+            ub = {
+                "type":"ineq",
+                "fun": lambda x: self.bounds.ub - x # positive
+            }
+            res = minimize(self.obj, x0, 
+                        method=alg,
+                        constraints=[lb, ub],
+                        options=opt)
+
+            if not np.allclose(self.lifting_line_const(res.x), 0.):
+                print("Result does no satisfy lifting line constraint")
+        elif alg in "SLSQP":
+            lb = {
+                "type":"ineq",
+                "fun": lambda x: x - self.bounds.lb # positive
+            }
+            ub = {
+                "type":"ineq",
+                "fun": lambda x: self.bounds.ub - x # positive
+            }
+            res = minimize(self.obj, x0, 
+                        method=alg,
+                        constraints=[lb, ub],
+                        options=opt)
+
+        elif alg == 'trust-constr':
+            res = minimize(self.obj, x0, 
+                        method=alg,
+                        options=opt, 
+                        bounds=self.bounds)
+        else:
+            raise NotImplementedError(f"No routine for algorithm {alg}")
+        return res
+
+    def get_vars(self, x, dic=False):
+        V = x[0]
+        b = x[1]
+        c = x[2:2+self.N_th]
+        al = x[2+self.N_th:2+2*self.N_th]
+        
+        A = x[-self.N_A:]
+        if b>0 and V>0 and np.isfinite(x).all():
+            try:
+                A = self.ll(V, b, c, al)
+            except np.linalg.LinAlgError:
+                pass
+
+        if dic:
+            return dict(V=V,b=b,c=c, al=al, A=A)
+        else:
+            return V, b, c, al, A
+
+    def ll(self, V, b, c, al):
+        S = b/2 * self.w_th @ c
+        CL = self.W / V**2 / S
+        A = np.zeros(self.N_A)
+        A[0] = 8 * self.W / pi / rho / (b * V**2)
+        if self.cl_model != "flat_plate":
+            raise NotImplementedError
+        M = (self.Sa + c[:, None] * 2 * pi * 1/(4*b) * self.Sa_)[:,1:]
+        r = c * 2 * pi * al
+        A[1:] = np.linalg.lstsq(M, r, rcond=None)[0]
+        return A
+
+    def set_vars(self, dict_var, x=None):
+        x = super().set_vars(dict_var, x=x)
+        dic = self.get_vars(x, dic=True) # will compute A
+        return super().set_vars(dic)
+
 
 
 class Plane:
