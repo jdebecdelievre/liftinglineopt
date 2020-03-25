@@ -4,6 +4,7 @@ from scipy.optimize import minimize, Bounds, NonlinearConstraint, LinearConstrai
 import torch
 import quadpy
 from abc import ABC, abstractmethod 
+from pyoptsparse import Optimization, OPT
 
 rho = 1.225
 pi = np.pi
@@ -189,7 +190,7 @@ class LiftingLineOpt(AbstractLLopt):
         return res
 
     def obj(self, x):
-        V, b, c, al, A = self.get_vars(x)
+        V, b, c, al, A, fail = self.get_vars(x)
         L = A[0]
         al_i = self.alpha_i(b, A)
         D = 2 / pi * (self.w_th.T @ (c*self.CD0_2D(V,c, al - al_i))) + \
@@ -198,12 +199,12 @@ class LiftingLineOpt(AbstractLLopt):
 
     def enough_lift_const(self,x):
         # negative
-        V, b, c, al, A = self.get_vars(x)
+        V, b, c, al, A, fail = self.get_vars(x)
         return 8 * self.W / pi / rho - A[0] * b * V**2
 
     def lifting_line_const(self, x):
         # equal 0
-        V, b, c, al, A = self.get_vars(x)
+        V, b, c, al, A, fail = self.get_vars(x)
         al_i = self.alpha_i(b, A)
         return (self.Sa @ A -  c * self.CL_2D(al - al_i))[1:-1]
    
@@ -231,13 +232,13 @@ class LiftingLineOpt(AbstractLLopt):
 
         # Set to default:
         dflt = {"V":10., "b":3., "c":0.3, "al":0.01, "A":np.random.uniform(0,1., self.N_A)}
-        x_dflt = self.set_vars(dflt)
+        x_dflt = self.set_vars(dflt)[0]
 
         # If finite bounds are provided, draw randomly inbetween the bounds
         for i,u,l in zip(range(self.Nx), self.bounds.ub, self.bounds.lb):
             if np.isfinite(u) and np.isfinite(l):
                 x_dflt[i] = 0.9*(u-l)/2*np.random.random() + (u+l)/2
-        return self.set_vars(dict_var, x_dflt)
+        return self.set_vars(dict_var, x_dflt)[0]
 
     def get_vars(self, x, dic=False):
         V = x[0]
@@ -245,14 +246,16 @@ class LiftingLineOpt(AbstractLLopt):
         c = x[2:2+self.N_th]
         al = x[2+self.N_th:2+2*self.N_th]
         A = x[-self.N_A:]
+        fail = 0
         if dic:
             return dict(V=V,b=b,c=c, al=al,A=A)
         else:
-            return V, b, c, al, A
+            return V, b, c, al, A, fail
 
     def set_vars(self, dict_var, x=None):
         if x is None:
             x = np.zeros(self.Nx)
+        fail = 0
         for k, val in dict_var.items():
             if k == "V":
                 x[0] = val
@@ -264,12 +267,14 @@ class LiftingLineOpt(AbstractLLopt):
                 x[2+self.N_th:2+2*self.N_th] = val
             elif k == "A":
                 x[-self.N_A:] = val
+            elif k == "fail":
+                fail = val
             else:
                 raise KeyError(f"dict_var has an invalid key {k}")
-        return x
+        return x, fail
 
     def get_plane(self, x):
-        V, b, c, al, A = self.get_vars(x)
+        V, b, c, al, A, fail = self.get_vars(x)
         return Plane(b=b, c=c, w_th=self.w_th, 
                 theta_pts=self.theta_pts, 
                 twist=al - al[0], N_A=self.N_A)
@@ -284,14 +289,13 @@ class LiftingLineOpt(AbstractLLopt):
             default_lb = self.set_vars(
                 {"b":0., "V":0., "c":np.zeros(self.N_th)},
                 -np.inf * np.ones(self.Nx)
-            )
-            ub = self.set_vars(bounds["ub"], default_ub)
-            lb = self.set_vars(bounds["lb"], default_lb)
+            )[0]
+            ub = self.set_vars(bounds["ub"], default_ub)[0]
+            lb = self.set_vars(bounds["lb"], default_lb)[0]
             self.bounds = Bounds(lb, ub, keep_feasible=False)
         else:
-            self.bounds.ub = self.set_vars(bounds["ub"], self.bounds.ub)
-            self.bounds.lb = self.set_vars(bounds["lb"], self.bounds.lb)  
-
+            self.bounds.ub = self.set_vars(bounds["ub"], self.bounds.ub)[0]
+            self.bounds.lb = self.set_vars(bounds["lb"], self.bounds.lb)[0]
 
 class UnconstrainedLLopt(LiftingLineOpt):
     def __init__(self, W, N_A=5, N_th=10, 
@@ -316,15 +320,39 @@ class UnconstrainedLLopt(LiftingLineOpt):
         self.bounds = None
         self.update_bounds(bounds)
 
-    # def optimize(self, x0, alg='COBYLA', options={}):
-    #     opt = {'verbose': 1}
-    #     opt.update(options)
-    #     res = minimize(self.obj, x0, 
-    #                 method=alg,
-    #                 options=opt, 
-    #                 bounds=self.bounds)
-    #     return res
-    def optimize(self, x0, alg='COBYLA', options={}):
+    def optimize(self, x0, alg='IPOPT', options={}):
+        opt = {}
+        opt.update(options)
+        def objfun(xdict):
+            x, fail = self.set_vars(xdict)
+            funcs={'obj':10000. if fail else self.obj(x)}
+            return funcs, fail
+        optProb = Optimization('llOpt', objfun)
+        ub = self.get_vars(self.bounds.ub, dic=True)
+        lb = self.get_vars(self.bounds.lb, dic=True)
+        x0 = self.get_vars(x0, dic=True)
+        optProb.addVar('V', upper=ub['V'], lower=lb['V'], value=x0['V'])
+        optProb.addVar('b', upper=ub['b'], lower=lb['b'], value=x0['b'])
+        optProb.addVarGroup('c', self.N_th, upper=ub['c'], lower=lb['c'], value=x0['c'])
+        optProb.addVarGroup('al', self.N_th, upper=ub['al'], lower=lb['al'], value=x0['al'])
+        optProb.addObj('obj')
+        print(optProb)
+
+        if alg== "IPOPT":
+            opt = OPT(alg, options=options)
+            sol = opt(optProb, sens='FD')
+        else:
+            raise NotImplementedError(f"No routine for algorithm {alg}")
+        D = dict(
+        al = [a.value for a in sol.variables['al']],
+        c = [a.value for a in sol.variables['c']],
+        b = sol.variables['b'][0].value,
+        V = sol.variables['V'][0].value
+        )
+        x = self.set_vars(D)[0]
+        return x
+
+    def optimize_scipy(self, x0, alg='COBYLA', options={}):
         opt = {'verbose': 1}
         opt.update(options)
         if alg in "COBYLA":
@@ -373,16 +401,17 @@ class UnconstrainedLLopt(LiftingLineOpt):
         al = x[2+self.N_th:2+2*self.N_th]
         
         A = x[-self.N_A:]
+        fail = 0
         if b>0 and V>0 and np.isfinite(x).all():
             try:
                 A = self.ll(V, b, c, al)
             except np.linalg.LinAlgError:
-                pass
+                fail = 1
 
         if dic:
-            return dict(V=V,b=b,c=c, al=al, A=A)
+            return dict(V=V,b=b,c=c, al=al, A=A, fail=fail)
         else:
-            return V, b, c, al, A
+            return V, b, c, al, A, fail
 
     def ll(self, V, b, c, al):
         S = b/2 * self.w_th @ c
@@ -397,7 +426,7 @@ class UnconstrainedLLopt(LiftingLineOpt):
         return A
 
     def set_vars(self, dict_var, x=None):
-        x = super().set_vars(dict_var, x=x)
+        x, fail = super().set_vars(dict_var, x=x)
         dic = self.get_vars(x, dic=True) # will compute A
         return super().set_vars(dic)
 

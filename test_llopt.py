@@ -38,7 +38,7 @@ def test_get_var():
     LLopt = LLopt_tested(1, N_A=5, N_th=11, cd0_model='constant', cl_model='flat_plate')
     x = LLopt.initial_guess()
     d = LLopt.get_vars(x, dic=True)
-    x_ = LLopt.set_vars(d)
+    x_ = LLopt.set_vars(d)[0]
     if LLopt_tested == UnconstrainedLLopt:
         assert np.allclose(x[:-LLopt.N_A], x_[:-LLopt.N_A]),f"Set var {x} different from getvar {x_}"
     else:
@@ -75,14 +75,14 @@ def test_ellipse():
         c=c,
         al=np.zeros(N_th),
         V=V
-    ))
+    ))[0]
     plane = LLopt.get_plane(x)
     S = plane.area
     A1 = W / (0.5 * rho * V**2 * S) * 4 * S / b / pi
     CL = b * pi * A1 / 4 / plane.area
     CL_a_ellipse = 2 * pi / (1 + 2/plane.AR)
     al_ = CL / CL_a_ellipse
-    x = LLopt.set_vars({"A":np.array([A1,0.,0.,0.,0.]), "al":al_}, x)
+    x = LLopt.set_vars({"A":np.array([A1,0.,0.,0.,0.]), "al":al_}, x)[0]
 
 
     # Ellipse L/D
@@ -94,7 +94,7 @@ def test_ellipse():
     print("obj passed")
 
     # Ellipse alpha_i
-    _, _, _, _, A = LLopt.get_vars(x)
+    _, _, _, _, A, fail = LLopt.get_vars(x)
     assert np.allclose(CL/(pi*plane.AR), LLopt.alpha_i(b, A)),f"Estimated al_i {LLopt.alpha_i(b, A)} not matching theoretical {CL/(pi*plane.AR)}"
     print("alpha_i passed")
 
@@ -107,9 +107,10 @@ def test_ellipse():
     bounds = dict(ub = {"b":5, "al":0.1}, lb={"al":-0.1, "c":cs})
     LLopt.update_bounds(bounds)
     x = LLopt.initial_guess()
-    res = LLopt.optimize(x, alg='trust-constr')
-    V, b, c, al, A = LLopt.get_vars(res.x)
+    x = LLopt.optimize(x, alg='IPOPT')
+    V, b, c, al, A, fail = LLopt.get_vars(x)
     assert np.allclose(A[1:], 0., atol=1.), f"A = {A}"
+    np.savetxt('tmp.csv',x, delimiter=',')
     print("ellipse test passed <-- \n")
 
 
@@ -118,11 +119,11 @@ def test_wcon():
     W = 1
     LLopt = LLopt_tested(W, N_A=5, N_th=11)
     x = LLopt.initial_guess()
-    V, b, c, al, A = LLopt.get_vars(x)
+    V, b, c, al, A, fail = LLopt.get_vars(x)
     plane = LLopt.get_plane(x)
     CL = W/(1/2 * rho * V**2 * plane.area)
     A[0] = CL * 4 * plane.area / pi / b
-    x = LLopt.set_vars({'A':A}, x)
+    x = LLopt.set_vars({'A':A}, x)[0]
     assert np.isclose(0., LLopt.enough_lift_const(x)), f"enough_lift con is not 0.: {LLopt.enough_lift_const(x)} "
     print("enough lift const test passed <-- \n")
 
