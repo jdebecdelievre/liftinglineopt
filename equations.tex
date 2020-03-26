@@ -20,8 +20,10 @@
 \usepackage{longtable}
 \setlength\LTleft{0pt} 
 
-
 \begin{document}
+\newcommand{\cl}{\boldsymbol{{c_l}^{2D}}}
+\newcommand{\cd}{\boldsymbol{{c_{d_0}}^{2D}}}
+
 
 \title{Glider Optimization with Lifting Line Theory and Airfoil Wind Tunnel Data}
 \author{Jean de Becdelievre}
@@ -53,7 +55,7 @@ $c(y) \text{ or } c(\theta)$ & span-wise chord distribution\\
 $c_l(y) \text{ or } c_l(\theta)$ & span-wise lift coefficient distribution\\
 $c_d(y) \text{ or } c_d(\theta)$ & span-wise drag coefficient distribution\\
 $V$ & airspeed \\
-${C_L}^{2D} \text{ and } {C_{D_0}}^{2D}$ & fit of 2D airfoil data \\
+$\cl \text{ and } \cd $ & fit of 2D airfoil data \\
 $Re$ & Reynolds number \\
 $y_k, \theta_k, \alpha_k, \alpha_{i_k}, c_k, c_{l_k}$ &  $y, \theta, \alpha, \alpha_i, c, c_{l}$ at the kth span section\\
 \end{longtable}}
@@ -63,8 +65,8 @@ $y_k, \theta_k, \alpha_k, \alpha_{i_k}, c_k, c_{l_k}$ &  $y, \theta, \alpha, \al
 
 This code aims at optimizing the wing planform and airspeed of a glider of a given weight W and fixed airfoil section for maximum $L/D$.
 2D wind tunnel data of the airfoil is available, {\it i.e.} the functions
-${C_L}^{2D}(\alpha, Re)$ and 
-${C_{D_0}}^{2D}(\alpha, Re)$ are provided.
+$\cl(\alpha, Re)$ and 
+$\cd(\alpha, Re)$ are provided.
 
 The optimization problem reads:
 
@@ -73,8 +75,8 @@ The optimization problem reads:
 	& & \left( C_L / (C_{D_i} + C_{D_0})\right)^{-1} \nonumber \\
 	& \text{subject to} 
 	& C_L &= \frac{W}{1/2 \rho V^2 S} \\
-	& & c_l(y) &= {C_L}^{2D} \left( \alpha(y) + \alpha_i(y), Re(y)\right) \\
-	& & c_{d_0}(y) &= {C_{D_0}}^{2D}(\alpha(y) - \alpha_i(y), Re(y)) \\
+	& & c_l(y) &= \cl \left( \alpha(y) + \alpha_i(y), Re(y)\right) \\
+	& & c_{d_0}(y) &= \cd(\alpha(y) - \alpha_i(y), Re(y)) \\
 	& & C_L &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_l(y') dy'\\
 	& & C_{D_0} &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_{d_0}(y') dy'\\
 	& & C_{D_i} & = \frac{C_L^2}{\pi \AR \epsilon} \\
@@ -82,7 +84,7 @@ The optimization problem reads:
 	& & \epsilon &= \left(\sum_{n=1}^{N_A} n \left(\frac{A_n}{A_1}\right)^2 \right)^{-1} \\
 	& & \alpha_i(\theta) &= -\frac 1 {4b} \sum_{n=1}^{N_A} n A_n\frac{\sin(n\theta)}{\sin(\theta)} \\
 	& \forall \theta \in [0, \pi] & \sum_{n=1}^{N_A} A_n \sin(\theta) &= \frac{1}{
-		c(\theta)} {C_L}^{2D} \left( 
+		c(\theta)} \cl \left( 
 			\alpha(\theta) - \alpha_i(\theta), Re(\theta)
 		\right) \\
 \end{align*}
@@ -96,11 +98,11 @@ The final optimization problem is:
 \begin{align*}
 	& \underset{V, b, c, \alpha, A}{\text{minimize}}
 	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
-	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}\left( 
+	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k \cd\left( 
 		\alpha_k +\alpha_{i_k}, Re(c_k, v_k)
 		\right) \\
 	& \text{subject to}
-	&  \sum_{n=1}^{N_{A}} M_{k,n} A_n &=  c_k{C_L}^{2D} \left( \alpha_k - \frac {1}{4b} 
+	&  \sum_{n=1}^{N_{A}} M_{k,n} A_n &=  c_k\cl \left( \alpha_k - \frac {1}{4b} 
 		\sum_{n=1}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)\right) \quad \text{for } k \in 1,\dots, N_{\theta} \\
 	& &  A_1 &= \frac{8W}{\rho V^2 b \pi}\\
 \end{align*}
@@ -110,14 +112,14 @@ Or, in an even more compact form by plugging in the last constraint for $A_1$ in
 \begin{align*}
 	& \underset{V, b, c, \alpha, A}{\text{minimize}} &
 	\frac{W}{\rho b} + \frac{V^2 \pi}{8}\sum_{n=2}^{N_A} n A_{n}^2 &+
-	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}
+	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k \cd
 	  \left( \alpha_k
 	  - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
 	  - \frac {1}{4b}\sum_{n=1}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)
 	  \right)\\
 	& \text{subject to} &
  	M_{k, 1} \frac{8W}{\rho V^2 b \pi} &+ \sum_{n=2}^{N_{A}} M_{k,n} A_n = \\
-	& & c_k{C_L}^{2D} & \left( \alpha_k
+	& & c_k\cl & \left( \alpha_k
 		 - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
 		 - \frac {1}{4b}\sum_{n=2}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)\right)
 		 \quad \text{for } k \in 1,\dots, N_{\theta}
@@ -156,19 +158,19 @@ Directly plugging in the solution of the Glauert integral:
 $$ \alpha_i(\theta) = \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} 	$$
 
 The value of the lift coefficient on each section is given by the fit of the 2D airfoil data:
-$$c_l(\theta) = {C_L}^{2D} \left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right)$$
+$$c_l(\theta) = \cl \left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right)$$
 
 Plugging in the value of $c_l$ in terms of the Fourier coefficients of $\Gamma$,
 we obtain the general equation that needs to be solved to find the $A_{1:+\infty}$ is:
 %
 $$
-\sum_{n=1}^{+\infty} A_n \sin(n\theta) = c(\theta) {C_L}^{2D} \left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right)
+\sum_{n=1}^{+\infty} A_n \sin(n\theta) = c(\theta) \cl \left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right)
 $$
 %
 If we only compute $A_{n}$ for $n \in [0, N_A]$, we can choose a discrete set of $\theta_k$ for $k \in [0, N_{\theta}]$:
 
 \begin{equation}
-	MA = c {C_L}^{2D} \left( \alpha - \frac {1}{4b} M' A , Re(c, V)\right) 
+	MA = c \cl \left( \alpha - \frac {1}{4b} M' A , Re(c, V)\right) 
 \end{equation}
 
 with:
@@ -234,19 +236,19 @@ Using again that the Fourier basis functions are orthogonal, we obtain:
 Finally, $C_{D_0}$ is also obtained by integration:
 %
 \begin{align*}
-	c_{d_0}(\theta) &= {C_{D_0}}^{2D}\left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right) \\
-	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) {C_{D_0}}^{2D}\left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right) \sin(\theta) d\theta \\
-	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) {C_{D_0}}^{2D}\left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \sin(\theta) d\theta
+	c_{d_0}(\theta) &= \cd\left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right) \\
+	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) \cd\left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right) \sin(\theta) d\theta \\
+	C_{D_0}(\theta) &= \frac b {2S} \int_{0}^{\pi} c(\theta) \cd\left( \alpha(\theta) - \frac {1}{4b}  \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta) }{\sin(\theta)} , Re(\theta)\right) \sin(\theta) d\theta
 \end{align*}
 
-If ${C_{D_0}}^{2D}$ has an analytic expression, this can be simplified further.
+If $\cd$ has an analytic expression, this can be simplified further.
 In the our case however, it is a general function fitted from wind tunnel data, 
 therefore the integration is performed numerically with Clenshaw–Curtis quadrature. 
 
 Calling $w_{\theta}^{(k)}$ and $\theta_k$ respectively the weights and the points of this quadrature, we get:
 \begin{equation}
 	\label{eq:cd0}
-	C_{D_0}(\theta) = \frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) {C_{D_0}}^{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
+	C_{D_0}(\theta) = \frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) \cd\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
 \end{equation}
 
 Finally:
@@ -257,10 +259,10 @@ Finally:
 	{C_{Di} + C_{D0}} \nonumber \\
 	\frac L D &= \frac{\frac{b \pi A_1}{4S}}{
 		\frac {\pi}{16S} \sum_{n=1}^{+\infty} n A_{n}^2 + 
-		\frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) {C_{D_0}}^{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
+		\frac b {2S} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) \cd\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right)
 	} \nonumber \\
 	\frac L D &= \left(	\frac {1}{4bA_1} \sum_{n=1}^{+\infty} n A_{n}^2 + 
-		\frac {2} {\pi A_1} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) {C_{D_0}}^{2D}\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right) 
+		\frac {2} {\pi A_1} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c(\theta_k) \cd\left( \alpha(\theta_k) - \frac {1}{4b} \sum_{n=1}^{+\infty} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)\right) 
 	\right)^{-1} 
 \end{align}
 
@@ -273,15 +275,15 @@ We start with:
 	& & \left( C_L / (C_{D_i} + C_{D_0})\right)^{-1} \nonumber \\
 	& \text{subject to} 
 	& C_L &= \frac{W}{1/2 \rho V^2 S} \\
-	& & c_l(y) &= {C_L}^{2D} \left( \alpha(y) + \alpha_i(y), Re(y)\right) \\
-	& & c_{d_0}(y) &= {C_{D_0}}^{2D}(\alpha(y) - \alpha_i(y), Re(y)) \\
+	& & c_l(y) &= \cl \left( \alpha(y) + \alpha_i(y), Re(y)\right) \\
+	& & c_{d_0}(y) &= \cd(\alpha(y) - \alpha_i(y), Re(y)) \\
 	& & C_L &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_l(y') dy'\\
 	& & C_{D_0} &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_{d_0}(y') dy'\\
 	& & C_{D_i} & = \frac{C_L^2}{\pi \AR \epsilon} \\
 	& & \AR &= \frac{b^2}{S} \\
 	& & \epsilon &= \left(\sum_{n=1}^{N_A} n \left(\frac{A_n}{A_1}\right)^2 \right)^{-1} \\
 	& & \alpha_i(\theta) &= -\frac 1 {4b} \sum_{n=1}^{N_A} n A_n\frac{\sin(n\theta)}{\sin(\theta)} \\
-	& \forall \theta \in [0, \pi] & \sum_{n=1}^{N_A} A_n \sin(\theta) &= \frac{1}{c(\theta)} {C_L}^{2D} \left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right) \\
+	& \forall \theta \in [0, \pi] & \sum_{n=1}^{N_A} A_n \sin(\theta) &= \frac{1}{c(\theta)} \cl \left( \alpha(\theta) - \alpha_i(\theta), Re(\theta)\right) \\
 \end{align*}
 
 Discretizing, and using equations \ref{eq:cl}, \ref{eq:cdi}, \ref{eq:cd0}, \ref{eq:ld}, we get:
@@ -290,12 +292,12 @@ Discretizing, and using equations \ref{eq:cl}, \ref{eq:cdi}, \ref{eq:cd0}, \ref{
 \begin{align}
 	& \underset{V, b, c, \alpha, A}{\text{minimize}}
 	& & \frac {1}{4bA_1} \sum_{n=1}^{N_A} n A_{n}^2 + \nonumber \\
-	&&& \frac 2 {\pi A_1} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}\left( 
+	&&& \frac 2 {\pi A_1} \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k \cd\left( 
 		\alpha_k - 
 		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
 		\right) \label{obj1} \\
 	& \text{subject to}
-	& & MA = c {C_L}^{2D} \left( \alpha - \frac {1}{4b} M' A , Re(c, V)\right)   \label{llcon1}\\
+	& & MA = c \cl \left( \alpha - \frac {1}{4b} M' A , Re(c, V)\right)   \label{llcon1}\\
 	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
 \end{align}
 
@@ -304,12 +306,12 @@ Using \ref{wcon1} to simplify \ref{obj1} further, we obtain:
 \begin{align}
 	& \underset{V, b, c, \alpha, A}{\text{minimize}}
 	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 + \nonumber \\
-	&&&  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}\left( 
+	&&&  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k \cd\left( 
 		\alpha_k - 
 		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
 		\right) \label{obj2} \\
 	& \text{subject to}
-	& & MA = c {C_L}^{2D} \left( \alpha_k - \frac {1}{4b} M' A_n , Re(\theta_k)\right)  \label{llcon2}\\
+	& & MA = c \cl \left( \alpha_k - \frac {1}{4b} M' A_n , Re(\theta_k)\right)  \label{llcon2}\\
 	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon2}
 \end{align}
 
@@ -324,14 +326,14 @@ Finally, we incorporate \ref{wcon2} into the objective function and the constrai
 \begin{align*}
 	& \underset{V, b, c, \alpha, A}{\text{minimize}} &
 	\frac{W}{\rho b} + \frac{V^2 \pi}{8}\sum_{n=2}^{N_A} n A_{n}^2 &+
-	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}
+	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k \cd
 	  \left( \alpha_k
 	  - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
 	  - \frac {1}{4b}\sum_{n=1}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)
 	  \right)\\
 	& \text{subject to} &
  	M_{k, 1} \frac{8W}{\rho V^2 b \pi} &+ \sum_{n=2}^{N_{A}} M_{k,n} A_n = \\
-	& & c_k{C_L}^{2D} & \left( \alpha_k
+	& & c_k\cl & \left( \alpha_k
 		 - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
 		 - \frac {1}{4b}\sum_{n=2}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)\right)
 		 \quad \text{for } k \in 1,\dots, N_{\theta}
