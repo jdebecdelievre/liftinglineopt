@@ -19,7 +19,6 @@
 \usepackage{siunitx}
 \usepackage{longtable}
 \setlength\LTleft{0pt} 
-% \def\AR{\text{\itshape\clipbox{0pt 0pt .32em 0pt}\AE\kern-.30emR}}
 
 
 \begin{document}
@@ -37,7 +36,7 @@ $W$  & glider weight \\
 $L, C_L$ & lift, lift coefficient \\
 $D,Di,D_0, C_D,C_{Di},C_{D_0}$& drag, induced drag, friction drag, and respective coefficients \\
 $b$ & wing span \\
-$S$ & wing area \\
+$M$ & wing area \\
 $\AR$ & wing aspect ratio \\
 $y$ & span-wise coordinate, ranging from $-b/2$ to $b/2$ \\
 $\theta$ & remapped span-wise coordinate ranging from $0$ to $\pi$ \\
@@ -45,8 +44,8 @@ $N_{theta}$ & Number of span-wise sections \\
 $\Gamma(y) \text{ or } \Gamma(\theta)$ & span-wise strength of vortex sheet\\
 $A_n$ & nth coefficient of the Fourier expansion of $\Gamma$ \\
 $N_{A}$ & Number of Fourier coefficients considered for $\Gamma$ \\
-$S$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad S_{k,n} = \sin(n\theta_k)$ \\
-$S'$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad {S'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$ \\
+$M$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad M_{k,n} = \sin(n\theta_k)$ \\
+$M'$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad {M'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$ \\
 $A$ & vector of size $N_A$ containing all the $A_n$ \\
 $\alpha(y) \text{ or } \alpha(\theta)$ & span-wise angle of attack distribution\\
 $\alpha_i(y) \text{ or } \alpha_i(\theta)$ & span-wise lift-induced angle of attack distribution\\
@@ -78,7 +77,7 @@ The optimization problem reads:
 	& & c_{d_0}(y) &= {C_{D_0}}^{2D}(\alpha(y) - \alpha_i(y), Re(y)) \\
 	& & C_L &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_l(y') dy'\\
 	& & C_{D_0} &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_{d_0}(y') dy'\\
-	& & C_{D_i} & = \frac{C_L}{\pi \AR \epsilon} \\
+	& & C_{D_i} & = \frac{C_L^2}{\pi \AR \epsilon} \\
 	& & \AR &= \frac{b^2}{S} \\
 	& & \epsilon &= \left(\sum_{n=1}^{N_A} n \left(\frac{A_n}{A_1}\right)^2 \right)^{-1} \\
 	& & \alpha_i(\theta) &= -\frac 1 {4b} \sum_{n=1}^{N_A} n A_n\frac{\sin(n\theta)}{\sin(\theta)} \\
@@ -89,7 +88,7 @@ The optimization problem reads:
 \end{align*}
 
 where $\theta$ is a span parametrization such that:
-$$\forall \theta \in [0,\pi], \forall y \in [\frac {-b} 2, \frac b 2], \quad y = \frac b 2 \cos\theta$$
+$$\forall y \in [\frac {-b} 2, \frac b 2], \quad \exists \theta \in [0,\pi], \quad y = \frac b 2 \cos\theta$$
 
 We discretize the span into $N_{theta}$ span-wise sections, and perform several simplifications detailed in the rest of this document.
 The final optimization problem is:
@@ -101,8 +100,8 @@ The final optimization problem is:
 		\alpha_k +\alpha_{i_k}, Re(c_k, v_k)
 		\right) \\
 	& \text{subject to}
-	&  \sum_{n=1}^{N_{A}} S_{k,n} A_n &=  c_k{C_L}^{2D} \left( \alpha_k - \frac {1}{4b} 
-		\sum_{n=1}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)\right) \quad \text{for } k \in 1,\dots, N_{\theta} \\
+	&  \sum_{n=1}^{N_{A}} M_{k,n} A_n &=  c_k{C_L}^{2D} \left( \alpha_k - \frac {1}{4b} 
+		\sum_{n=1}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)\right) \quad \text{for } k \in 1,\dots, N_{\theta} \\
 	& &  A_1 &= \frac{8W}{\rho V^2 b \pi}\\
 \end{align*}
 
@@ -113,14 +112,14 @@ Or, in an even more compact form by plugging in the last constraint for $A_1$ in
 	\frac{W}{\rho b} + \frac{V^2 \pi}{8}\sum_{n=2}^{N_A} n A_{n}^2 &+
 	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}
 	  \left( \alpha_k
-	  - \frac {1}{4b} S'_{k,1}\frac{8W}{\rho V^2 b \pi}
-	  - \frac {1}{4b}\sum_{n=1}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)
+	  - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
+	  - \frac {1}{4b}\sum_{n=1}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)
 	  \right)\\
 	& \text{subject to} &
- 	S_{k, 1} \frac{8W}{\rho V^2 b \pi} &+ \sum_{n=2}^{N_{A}} S_{k,n} A_n = \\
+ 	M_{k, 1} \frac{8W}{\rho V^2 b \pi} &+ \sum_{n=2}^{N_{A}} M_{k,n} A_n = \\
 	& & c_k{C_L}^{2D} & \left( \alpha_k
-		 - \frac {1}{4b} S'_{k,1}\frac{8W}{\rho V^2 b \pi}
-		 - \frac {1}{4b}\sum_{n=2}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)\right)
+		 - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
+		 - \frac {1}{4b}\sum_{n=2}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)\right)
 		 \quad \text{for } k \in 1,\dots, N_{\theta}
 \end{align*}
 
@@ -130,7 +129,7 @@ From Kutta-Joukovsky theorem:
 %
 $$\Gamma(y) = \frac{l(y)}{\rho V} = \frac{1/2 \rho V^2 c(y) c_l(y)}{\rho V} =  \frac{1}{2} V c(y) c_l(y)$$
 
-The strength of the vortex sheet $\Gamma$ is defined on a closed interval $[-b/2, b/2]$, which we remap to $[0, \pi]$. 
+The strength of the vortex sheet $\Gamma$ is defined on a closed interval $[-b/2, b/2]$, which we remap to $[\pi, 0]$. 
 On this interval, a Fourier series expansion can be written:
 $$y = \frac{b}{2}\cos(\theta)$$
 %
@@ -169,15 +168,15 @@ $$
 If we only compute $A_{n}$ for $n \in [0, N_A]$, we can choose a discrete set of $\theta_k$ for $k \in [0, N_{\theta}]$:
 
 \begin{equation}
-	SA = c {C_L}^{2D} \left( \alpha - \frac {1}{4b} S' A , Re(c, V)\right) 
+	MA = c {C_L}^{2D} \left( \alpha - \frac {1}{4b} M' A , Re(c, V)\right) 
 \end{equation}
 
 with:
 \begin{itemize}
 	\item[] $c$ and $\alpha$ two vectors of size $N_{\theta}$ containing the chord and angle of attack at each $\theta_k$
-	\item[] $S$ and a $S'$ two matrices of size $N_{\theta}, N_A$ such that: 
-	$$ \forall k\in \{0,\dots, N_{\theta}\}, \forall n \in \{0,\dots, N_A\} \quad S_{k,n} = \sin(n\theta_k) \quad {S'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$$
-	% \item[]  a matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad {S'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$ 
+	\item[] $M$ and a $M'$ two matrices of size $N_{\theta}, N_A$ such that: 
+	$$ \forall k\in \{0,\dots, N_{\theta}\}, \forall n \in \{0,\dots, N_A\} \quad M_{k,n} = \sin(n\theta_k) \quad {M'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$$
+	% \item[]  a matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad {M'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$ 
 	\item[] $A$ a vector of size $N_A$ containing all the $A_n$
 \end{itemize}
 
@@ -278,7 +277,7 @@ We start with:
 	& & c_{d_0}(y) &= {C_{D_0}}^{2D}(\alpha(y) - \alpha_i(y), Re(y)) \\
 	& & C_L &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_l(y') dy'\\
 	& & C_{D_0} &= \frac 1 S \int_{-b/2}^{b/2} c(y') c_{d_0}(y') dy'\\
-	& & C_{D_i} & = \frac{C_L}{\pi \AR \epsilon} \\
+	& & C_{D_i} & = \frac{C_L^2}{\pi \AR \epsilon} \\
 	& & \AR &= \frac{b^2}{S} \\
 	& & \epsilon &= \left(\sum_{n=1}^{N_A} n \left(\frac{A_n}{A_1}\right)^2 \right)^{-1} \\
 	& & \alpha_i(\theta) &= -\frac 1 {4b} \sum_{n=1}^{N_A} n A_n\frac{\sin(n\theta)}{\sin(\theta)} \\
@@ -296,8 +295,8 @@ Discretizing, and using equations \ref{eq:cl}, \ref{eq:cdi}, \ref{eq:cd0}, \ref{
 		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
 		\right) \label{obj1} \\
 	& \text{subject to}
-	& & SA = c {C_L}^{2D} \left( \alpha - \frac {1}{4b} S' A , Re(c, V)\right)   \label{llcon1}\\
-	& &  & A_1 = \frac{2W}{\rho V^2 b \pi} \label{wcon1}
+	& & MA = c {C_L}^{2D} \left( \alpha - \frac {1}{4b} M' A , Re(c, V)\right)   \label{llcon1}\\
+	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
 \end{align}
 
 Using \ref{wcon1} to simplify \ref{obj1} further, we obtain:
@@ -310,7 +309,7 @@ Using \ref{wcon1} to simplify \ref{obj1} further, we obtain:
 		\frac {1}{4b} \sum_{n=1}^{N_A} n A_n \frac{ \sin(n\theta_k) }{\sin(\theta_k)} , Re(\theta_k)
 		\right) \label{obj2} \\
 	& \text{subject to}
-	& & SA =  {C_L}^{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon2}\\
+	& & MA = c {C_L}^{2D} \left( \alpha_k - \frac {1}{4b} M' A_n , Re(\theta_k)\right)  \label{llcon2}\\
 	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon2}
 \end{align}
 
@@ -320,42 +319,6 @@ because:
 	\frac{\pi}{2A_1} &= \frac{\rho V^2 b}{ W} 
 \end{align*}
 
-% \begin{align}
-% 	& \underset{V, b, c, \alpha, A}{\text{minimize}}
-% 	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
-% 	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}\left( 
-% 		\alpha_k - \frac {1}{4b} S' A_n, Re(\theta_k)
-% 		\right) \label{obj1} \\
-% 	& \text{subject to}
-% 	& & SA =  {C_L}^{2D} \left( \alpha_k - \frac {1}{4b} S' A_n , Re(\theta_k)\right)  \label{llcon1}\\
-% 	& &  & A_1 = \frac{8W}{\rho V^2 b \pi} \label{wcon1}
-% \end{align}
-
-
-% \begin{align}
-% 	& \underset{V, b, c, \alpha, \alpha_i A}{\text{minimize}}
-% 	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
-% 	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}\left( 
-% 		\alpha_k +\alpha_{i_k}, Re(\theta_k)
-% 		\right) \label{obj2} \\
-% 	& \text{subject to}
-% 	& & SA =  {C_L}^{2D} \left( \alpha_k + \alpha_{i_k} , Re(\theta_k)\right)  \label{llcon1}\\
-% 	& &  & A_1 \geq \frac{8W}{\rho V^2 b \pi} \label{wcon2}\\
-% 	& &  & \alpha_{i_k}\geq - \frac {1}{4b} S' A_n \label{aindcon2}
-% \end{align}
-
-% \begin{align*}
-% 	& \underset{V, b, c, \alpha, A}{\text{minimize}}
-% 	& & \frac{V^2 \pi}{8}\sum_{n=1}^{N_A} n A_{n}^2 +
-% 	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}\left( 
-% 		\alpha_k +\alpha_{i_k}, Re(c_k, v_k)
-% 		\right) \\
-% 	& \text{subject to}
-% 	&  \sum_{n=1}^{N_{A}} S_{k,n} A_n &=  c_k{C_L}^{2D} \left( \alpha_k - \frac {1}{4b} 
-% 		\sum_{n=1}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)\right) \quad \text{for } k \in 1,\dots, N_{\theta} \\
-% 	& &  A_1 &= \frac{8W}{\rho V^2 b \pi}\\
-% \end{align*}
-
 Finally, we incorporate \ref{wcon2} into the objective function and the constraint.
 
 \begin{align*}
@@ -363,14 +326,14 @@ Finally, we incorporate \ref{wcon2} into the objective function and the constrai
 	\frac{W}{\rho b} + \frac{V^2 \pi}{8}\sum_{n=2}^{N_A} n A_{n}^2 &+
 	  V^2 b  \sum_{k=1}^{N_{\theta}} w_{\theta}^{(k)} c_k {C_{D_0}}^{2D}
 	  \left( \alpha_k
-	  - \frac {1}{4b} S'_{k,1}\frac{8W}{\rho V^2 b \pi}
-	  - \frac {1}{4b}\sum_{n=1}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)
+	  - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
+	  - \frac {1}{4b}\sum_{n=1}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)
 	  \right)\\
 	& \text{subject to} &
- 	S_{k, 1} \frac{8W}{\rho V^2 b \pi} &+ \sum_{n=2}^{N_{A}} S_{k,n} A_n = \\
+ 	M_{k, 1} \frac{8W}{\rho V^2 b \pi} &+ \sum_{n=2}^{N_{A}} M_{k,n} A_n = \\
 	& & c_k{C_L}^{2D} & \left( \alpha_k
-		 - \frac {1}{4b} S'_{k,1}\frac{8W}{\rho V^2 b \pi}
-		 - \frac {1}{4b}\sum_{n=2}^{N_{A}}S'_{k,n}A_n , Re(c_k, v_k)\right)
+		 - \frac {1}{4b} M'_{k,1}\frac{8W}{\rho V^2 b \pi}
+		 - \frac {1}{4b}\sum_{n=2}^{N_{A}}M'_{k,n}A_n , Re(c_k, v_k)\right)
 		 \quad \text{for } k \in 1,\dots, N_{\theta}
 \end{align*}
 

@@ -10,7 +10,8 @@ pi = np.pi
 nu = 1.81*1e-5
 
 
-LLopt_tested = UnconstrainedLLopt
+# LLopt_tested = UnconstrainedLLopt
+LLopt_tested = LiftingLineOpt
 # x = [V, b, c, alpha, A]
 
 def test_ll_equation():
@@ -35,7 +36,7 @@ def test_ll_equation():
 
 def test_get_var():
     print("\nTesting get_var -->")
-    LLopt = LLopt_tested(1, N_A=5, N_th=11, cd0_model='constant', cl_model='flat_plate')
+    LLopt = LLopt_tested(1, N_A=5, N_th=11, cd0_model='constant',cl_model='flat_plate')
     x = LLopt.initial_guess()
     d = LLopt.get_vars(x, dic=True)
     x_ = LLopt.set_vars(d)[0]
@@ -62,8 +63,10 @@ def test_ellipse():
     print("\nTesting ellipse -->")
     N_th = 101
     W = 100
-    LLopt = LLopt_tested(W, N_A=5, N_th=N_th, 
-                        cd0_model='constant', 
+    CD0 = 0.0001
+    LLopt = LLopt_tested(W, N_A=13, N_th=N_th, 
+                        cd0_model='constant',
+                        cd0_val=CD0, 
                         cl_model='flat_plate')
     b = 5
     cs = 2 
@@ -82,11 +85,11 @@ def test_ellipse():
     CL = b * pi * A1 / 4 / plane.area
     CL_a_ellipse = 2 * pi / (1 + 2/plane.AR)
     al_ = CL / CL_a_ellipse
-    x = LLopt.set_vars({"A":np.array([A1,0.,0.,0.,0.]), "al":al_}, x)[0]
-
+    A = np.zeros(LLopt.N_A)
+    A[0] = A1
+    x = LLopt.set_vars({"A":A, "al":al_}, x)[0]
 
     # Ellipse L/D
-    CD0 = 0.01
     CDi = CL**2 / pi / plane.AR
     D_L = (CD0 + CDi) / CL
     assert np.isclose(D_L, LLopt.obj(x), rtol=1e-4), \
@@ -101,16 +104,18 @@ def test_ellipse():
     # Constraint satisfaction
     if LLopt_tested is not UnconstrainedLLopt:
         assert np.isclose(LLopt.enough_lift_const(x), 0.0), "Enough lift constraint not satisfied for ellipse"
-        assert np.allclose(LLopt.lifting_line_const(x), 0.0), "Lifting line constraint not satisfied for ellipse"
+        assert np.allclose(LLopt.lifting_line_const(x), 0.0, atol=1e-6), "Lifting line constraint not satisfied for ellipse"
 
     # convergence to ellipse
-    bounds = dict(ub = {"b":5, "al":0.1}, lb={"al":-0.1, "c":cs})
+    bounds = dict(ub = {"b":5, "al":.1}, lb={"al":0, "c":cs})
     LLopt.update_bounds(bounds)
-    x = LLopt.initial_guess()
-    x = LLopt.optimize(x, alg='IPOPT')
-    V, b, c, al, A, fail = LLopt.get_vars(x)
-    assert np.allclose(A[1:], 0., atol=1.), f"A = {A}"
-    np.savetxt('tmp.csv',x, delimiter=',')
+    x = LLopt.initial_guess({"al":0.05})
+    xopt, sol = LLopt.optimize(x, alg='IPOPT')
+    # x = LLopt.optimize_scipy(x, 'trust-constr')
+    V, b, c, al, A, fail = LLopt.get_vars(xopt)
+    np.savetxt('ellipse.csv',xopt, delimiter=',')
+    print(f"Optimized L/D: {1/LLopt.DoverL(V, b, c, al, A)}")
+    assert np.allclose(A[1:], 0., atol=0.01), f"A = {A}"
     print("ellipse test passed <-- \n")
 
 

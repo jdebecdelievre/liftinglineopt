@@ -106,7 +106,8 @@ class AbstractLLopt(ABC):
 
 class LiftingLineOpt(AbstractLLopt):
     def __init__(self, W, N_A=5, N_th=10, 
-                cd0_model = "flat_plate", 
+                cd0_model = "flat_plate",
+                cd0_val=0.001,
                 cl_model = "flat_plate",
                 bounds=None):
         assert N_A <= N_th - 2, \
@@ -122,12 +123,13 @@ class LiftingLineOpt(AbstractLLopt):
         self.Sa, self.Sa_, self.Nn = ll_equation(self.theta_pts, N_A)
 
         self.cd0_model = cd0_model
+        self.cd0_val = cd0_val
         self.cl_model = cl_model
 
         self.bounds = None
         self.update_bounds(bounds)
 
-    def optimize(self, x0, alg='COBYLA', options={}):
+    def optimize_scipy(self, x0, alg='trust-constr', options={}):
         opt = {'verbose': 1}
         opt.update(options)
         
@@ -187,10 +189,53 @@ class LiftingLineOpt(AbstractLLopt):
                         bounds=self.bounds)
         else:
             raise NotImplementedError(f"No routine for algorithm {alg}")
-        return res
+        return res.x, res
+
+    def optimize(self, x0, alg='IPOPT', options={}):
+        opt = {}
+        opt.update(options)
+        def objfun(xdict):
+            x, fail = self.set_vars(xdict)
+            funcs= {
+                'obj': self.obj(x),
+                'llcon': self.lifting_line_const(x),
+                "wcon": self.enough_lift_const(x)
+            }
+            return funcs, fail
+        optProb = Optimization('llOpt', objfun)
+        ub = self.get_vars(self.bounds.ub, dic=True)
+        lb = self.get_vars(self.bounds.lb, dic=True)
+        x0 = self.get_vars(x0, dic=True)
+        optProb.addVar('V', upper=ub['V'], lower=lb['V'], value=x0['V'])
+        optProb.addVar('b', upper=ub['b'], lower=lb['b'], value=x0['b'])
+        optProb.addVarGroup('c', self.N_th, upper=ub['c'], lower=lb['c'], value=x0['c'])
+        optProb.addVarGroup('al', self.N_th, upper=ub['al'], lower=lb['al'], value=x0['al'])
+        optProb.addVarGroup('A', self.N_A, upper=ub['A'], lower=lb['A'], value=x0['A'])
+        optProb.addObj('obj')
+        optProb.addConGroup('llcon', self.N_th, lower=0., upper=0.)
+        optProb.addCon('wcon', lower=0., upper=0.)
+
+        if alg== "IPOPT":
+            opt = OPT(alg, options=options)
+            sol = opt(optProb, sens='FD')
+        else:
+            raise NotImplementedError(f"No routine for algorithm {alg}")
+
+        D = dict(
+            al = [a.value for a in sol.variables['al']],
+            c = [a.value for a in sol.variables['c']],
+            A = [a.value for a in sol.variables['A']],
+            b = sol.variables['b'][0].value,
+            V = sol.variables['V'][0].value,
+        )
+        x = self.set_vars(D)[0]
+        return x, sol
 
     def obj(self, x):
         V, b, c, al, A, fail = self.get_vars(x)
+        return self.DoverL(V, b, c, al, A)
+
+    def DoverL(self, V, b, c, al, A):
         L = A[0]
         al_i = self.alpha_i(b, A)
         D = 2 / pi * (self.w_th.T @ (c*self.CD0_2D(V,c, al - al_i))) + \
@@ -206,7 +251,7 @@ class LiftingLineOpt(AbstractLLopt):
         # equal 0
         V, b, c, al, A, fail = self.get_vars(x)
         al_i = self.alpha_i(b, A)
-        return (self.Sa @ A -  c * self.CL_2D(al - al_i))[1:-1]
+        return (self.Sa @ A -  c * self.CL_2D(al - al_i))
    
     def alpha_i(self, b, A):
         return 1/(4*b) * self.Sa_ @ A
@@ -221,8 +266,8 @@ class LiftingLineOpt(AbstractLLopt):
         if self.cd0_model=="flat_plate":
             Re = RE(V, c)
             return 0.074/Re**(1/5) # flat plate
-        elif self.cd0_model=="constant":
-            return 0.01
+        elif self.cd0_model == "constant":
+            return self.cd0_val
         else:
             raise NotImplementedError
 
@@ -324,8 +369,14 @@ class UnconstrainedLLopt(LiftingLineOpt):
         opt = {}
         opt.update(options)
         def objfun(xdict):
-            x, fail = self.set_vars(xdict)
-            funcs={'obj':10000. if fail else self.obj(x)}
+            V = xdict['V']
+            b = xdict['b']
+            c = xdict['c']
+            al = xdict['al']
+            A, fail = self.ll(V, b, c, al)
+            funcs= {
+                'obj':10000. if fail else self.DoverL(V, b, c, al, A)
+            }
             return funcs, fail
         optProb = Optimization('llOpt', objfun)
         ub = self.get_vars(self.bounds.ub, dic=True)
@@ -336,7 +387,6 @@ class UnconstrainedLLopt(LiftingLineOpt):
         optProb.addVarGroup('c', self.N_th, upper=ub['c'], lower=lb['c'], value=x0['c'])
         optProb.addVarGroup('al', self.N_th, upper=ub['al'], lower=lb['al'], value=x0['al'])
         optProb.addObj('obj')
-        print(optProb)
 
         if alg== "IPOPT":
             opt = OPT(alg, options=options)
@@ -350,7 +400,7 @@ class UnconstrainedLLopt(LiftingLineOpt):
         V = sol.variables['V'][0].value
         )
         x = self.set_vars(D)[0]
-        return x
+        return x, sol
 
     def optimize_scipy(self, x0, alg='COBYLA', options={}):
         opt = {'verbose': 1}
@@ -392,7 +442,7 @@ class UnconstrainedLLopt(LiftingLineOpt):
                         bounds=self.bounds)
         else:
             raise NotImplementedError(f"No routine for algorithm {alg}")
-        return res
+        return res.x, res
 
     def get_vars(self, x, dic=False):
         V = x[0]
@@ -403,11 +453,7 @@ class UnconstrainedLLopt(LiftingLineOpt):
         A = x[-self.N_A:]
         fail = 0
         if b>0 and V>0 and np.isfinite(x).all():
-            try:
-                A = self.ll(V, b, c, al)
-            except np.linalg.LinAlgError:
-                fail = 1
-
+            A, fail = self.ll(V, b, c, al)
         if dic:
             return dict(V=V,b=b,c=c, al=al, A=A, fail=fail)
         else:
@@ -420,10 +466,14 @@ class UnconstrainedLLopt(LiftingLineOpt):
         A[0] = 8 * self.W / pi / rho / (b * V**2)
         if self.cl_model != "flat_plate":
             raise NotImplementedError
-        M = (self.Sa + c[:, None] * 2 * pi * 1/(4*b) * self.Sa_)[:,1:]
-        r = c * 2 * pi * al
-        A[1:] = np.linalg.lstsq(M, r, rcond=None)[0]
-        return A
+        M = (self.Sa + c[:, None] * 2 * pi * 1/(4*b) * self.Sa_)
+        r = c * 2 * pi * al - M[:, 0] * A[0]
+        try:
+            A[1:] = np.linalg.lstsq(M[:,1:], r, rcond=None)[0]
+            fail = 0
+        except np.linalg.LinAlgError:
+            fail = 1
+        return A, fail
 
     def set_vars(self, dict_var, x=None):
         x, fail = super().set_vars(dict_var, x=x)
