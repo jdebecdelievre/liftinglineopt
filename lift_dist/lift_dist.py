@@ -88,38 +88,60 @@ class BaseLiftDist():
         self.update_bounds(bounds)
 
     @abstractmethod
-    def obj(self, d):
-        pass
-
-    @abstractmethod
-    def Re(self, d):
-        pass
-
-    @abstractmethod
-    def cl(self, d):
+    def objective(self, xdict, constraints):
         pass
 
     def optimize(self, x0=None, alg='IPOPT', restarts=1, 
                     solver_options={}, obj_scale=1.,
                     usejit=True,
                     smooth_penalty={},
-                    clCon=None,
-                    ReCon=None):
+                    constraints={}):
         options = {}
         options.update(solver_options)
         if x0 is None:
             x0 = self.initial_guess()
         x0 = self.get_vars(x0, dic=True)
 
-        optProb, objfun, sensfun = self.unconstrained(x0, obj_scale, usejit, smooth_penalty)
+        # Define objective
+        def objective(xdict):
+            return self.objective(xdict, constraints)
 
-        best = objfun(x0)[0]["obj"]
+        # Precompile and differentiate
+        gradient = jacfwd(objective)
+        if usejit:
+            objective = jit(objective)
+            gradient = jit(gradient)
+
+        # Add fail flag
+        def objfun(xdict): return objective(xdict), 0
+        def sensfun(xdict, funcs): return gradient(xdict), 0
+        init = objfun(x0)[0]
+
+        # Create optimization problem
+        optProb = Optimization('llOpt', objfun)
+        ub = self.default_ub
+        lb = self.default_lb
+        for key in self.varNames:
+            optProb.addVarGroup(key, self.varSize[key], 
+                    upper=ub[key], lower=lb[key],  
+                    value=x0[key])
+        optProb.addObj('obj', scale=obj_scale)
+        for con in constraints:
+            optProb.addConGroup(con, init[con].shape[0],
+                        lower=constraints[con][0],
+                        upper=constraints[con][1]
+                        )
+        
+        # Run optimizer with various initial conditions
+        best = init["obj"]
         best_sol = optProb
         if alg in ["IPOPT", "SNOPT"]:
             opt = OPT(alg, options=options)
             for i in range(restarts):
                 # initial condition
                 d0 = self.get_vars(self.initial_guess(), dic=True)
+                print(d0)
+                print(objfun(d0)[0])
                 for key in d0:
                     for var, val0 in zip(optProb.variables[key], d0[key]):
                         var.value = val0
@@ -133,124 +155,11 @@ class BaseLiftDist():
         else:
             raise NotImplementedError(f"No routine for algorithm {alg}")
 
+        # Return best solution
         D = best_sol.getDVs()
         x = self.set_vars(D)
         print(sol)
         return x, sol
-
-    def unconstrained(self,
-                x0,
-                obj_scale=1.,
-                usejit=True,
-                smooth_penalty={}):
-
-        # Compute gradient function
-        def objective(x):
-            # weird micmac to make jax happy: scalar output, no lambda function
-            obj = self.obj(x)[0]
-            for key in smooth_penalty:
-                obj = obj + smooth_penalty[key] * np.sum((x[key][1:] - x[key][:-1])**2)
-            return obj
-        gradient = grad(objective)
-
-        # Precompile
-        if usejit:
-            gradient = jit(gradient)
-            objective = jit(objective)
-
-        def objfun(xdict):
-            fail = 0
-            funcs= {
-                'obj': objective(xdict)
-            }
-            return funcs, fail
-        def sensfun(xdict, funcs):
-            fail = 0
-            grd = gradient(xdict)
-            funcsSens = {
-                ('obj',key): grd[key] for key in grd
-            }
-            return funcsSens, fail
-        
-        optProb = Optimization('llOpt', objfun)
-        ub = self.default_ub
-        lb = self.default_lb
-
-        for key in self.varNames:
-            optProb.addVarGroup(key, self.varSize[key], 
-                    upper=ub[key], lower=lb[key],  
-                    value=x0[key])
-        optProb.addObj('obj', scale=obj_scale)
-
-        return optProb, objfun, sensfun
-
-
-#     def constrained(self,
-#                     x0,
-#                     obj_scale,
-#                     usejit,
-#                     smooth_penalty, 
-#                     ReCon, clCon):
-
-#         def objective(x):
-#             # weird micmac to make jax happy: scalar output, no lambda function
-#             obj = self.obj(x)[0]
-#             for key in smooth_penalty:
-#                 obj = obj + smooth_penalty[key] * np.sum((x[key][1:] - x[key][:-1])**2)
-#             return {}
-#         def reconfun(x): return self.Re(**x)
-#         def clconfun(x): return self.cl(**x)
-#         gradient = grad(objective)
-#         re_gradient = grad(reconfun)
-#         cl_gradient = grad(clconfun)
-#         if usejit:
-#             gradient = jit(gradient)
-#             re_gradient = jit(re_gradient)
-#             cl_gradient = jit(cl_gradient)
-#             objective = jit(objective)
-#             reconfun = jit(reconfun)
-#             reconfun = jit(reconfun)
-
-#         x0 = self.get_vars(x0, dic=True)
-
-#         def objfun(xdict):
-#             fail = 0
-#             funcs= {
-#                 'obj': objective(xdict),
-#                 'ReCon': reconfun(xdict),
-#                 'clCon': clconfun(xdict)
-#             }
-#             return funcs, fail
-#         def sensfun(xdict, funcs):
-#             fail = 0
-#             grd = gradient(xdict)
-#             cl_grd = cl_gradient(xdict)
-#             re_grd = re_gradient(xdict)
-#             funcsSens = {
-#                 ('obj',key): grd[key] for key in grd
-#             }
-#             funcsSens.update({
-#                 ('clCon',key): cl_grd[key] for key in cl_grd
-#             })
-#             funcsSens.update({
-#                 ('ReCon',key): re_grd[key] for key in re_grd
-#             })
-#             return funcsSens, fail
-        
-#         optProb = Optimization('llOpt', objfun)
-#         ub = self.default_ub
-#         lb = self.default_lb
-
-#         for key in self.varNames:
-#             optProb.addVarGroup(key, self.varSize[key], 
-#                     upper=ub[key], lower=lb[key],  
-#                     value=x0[key])
-#         optProb.addObj('obj', scale=obj_scale)
-#         if ReCon is not None:
-#             optProb.addCon('ReCon', upper=ReCon['lower'], lower=ReCon['lower'])
-#         if clCon is not None:
-#             optProb.addConGroup('clCon', self.Ny, upper=clCon['lower'], lower=clCon['lower'])
-
 
     def initial_guess(self, dict_var=None):
         if dict_var is None:
@@ -288,14 +197,6 @@ class BaseLiftDist():
         for k, val in self.varIndex.items():
             if k in dict_var:
                 x[val[0]:val[1]] = dict_var[k]
-            # if k == "Vb2":
-            #     x[0] = val
-            # elif k == "c_2b":
-            #     x[1:1+self.Ny] = val
-            # elif k == "A":
-            #     x[-self.Na:] = val
-            # else:
-            #     raise KeyError(f"dict_var has an invalid key {k}")
         return x
 
     def update_bounds(self, bounds):
@@ -342,7 +243,6 @@ class LiftDistVb(BaseLiftDist):
 
         self.w_th, self.theta_pts, self.y_pts = quadrature_weights(Ny)
         self.M, self.M1, self.M_, self.M1_, self.Nn = even_sine_exp(self.theta_pts, Na)
-
     
     def A1(self, Vb2):
         return 2 * self.W / (rho*pi) / Vb2 
@@ -359,11 +259,23 @@ class LiftDistVb(BaseLiftDist):
     def _AR(self, c_2b):
         return self.w_th @ c_2b
    
-    def obj(self, d):
-        A1 = self.A1(d["Vb2"])
-        CDi_AR = pi * (A1**2 + self.Nn @ d["A"]**2)
-        cd0 = self.CD0_2D(d["Vb2"], d["c_2b"], d["A"], A1)
-        return d["Vb2"] * (CDi_AR + self.w_th @ (cd0 * d["c_2b"]))
+    def objective(self, xdict, constraints={}):
+        A1 = self.A1(xdict["Vb2"])
+        CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
+        cd0 = self.CD0_2D(xdict["Vb2"], xdict["c_2b"], xdict["A"], A1)
+        funcs = {"obj":xdict["Vb2"] * (CDi_AR + self.w_th @ (cd0 * xdict["c_2b"]))}
+        for key in constraints:
+            if key == "clCon":
+                funcs.update({
+                    "clCon": self.cl(A1, xdict["A"], xdict["c_2b"])
+                })
+            elif key == "ReCon":
+                funcs.update({
+                    "ReCon": self.Re(xdict["Vb2"], xdict["c_2b"])
+                })
+            else:
+                raise ValueError(f"{key} is not a valid constraint")
+        return funcs
 
     def alpha_i(self, A1, A):
         return self.M_ @ A + self.M1_ * A1
@@ -437,12 +349,23 @@ class LiftDistND(BaseLiftDist):
     def _AR(self, c_b):
         return self.w_th @ c_b
    
-    def obj(self, d):
-        A1 = self.A1(d["Cw_AR"])
-        CDi_AR = pi * (A1**2 + self.Nn @ d["A"]**2)
-        cd0 = self.CD0_2D(d["Cw_AR"], d["c_b"], d["A"], A1)
-        # return (self.w_th @ (cd0 * d["c_b"]))[None]
-        return (CDi_AR + self.w_th @ (cd0 * d["c_b"]))/d["Cw_AR"]
+    def objective(self, xdict, constraints={}):
+        A1 = self.A1(xdict["Cw_AR"])
+        CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
+        cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], xdict["A"], A1)
+        funcs = {"obj":(CDi_AR + self.w_th @ (cd0 * xdict["c_b"]))/xdict["Cw_AR"]}
+        for key in constraints:
+            if key == "clCon":
+                funcs.update({
+                    "clCon": self.cl(A1, xdict["A"], xdict["c_b"])
+                })
+            elif key == "ReCon":
+                funcs.update({
+                    "ReCon": self.Re(xdict["Cw_AR"], xdict["c_b"])
+                })
+            else:
+                raise ValueError(f"{key} is not a valid constraint")
+        return funcs
 
     def alpha_i(self, A1, A):
         return self.M_ @ A + self.M1_ * A1
@@ -496,41 +419,3 @@ class GPLiftDist(LiftDistVb):
         CDi_AR = pi * (A1**2 + cp.multiply(self.Nn, d["A"]) @ d["A"])
         cd0 = self.CD0_2D(d["Vb2"], d["c_2b"], d["A"], A1)
         return d["Vb2"] * (CDi_AR + self.w_th @ cp.multiply(cd0, d["c_2b"]))
-
-    # def obj_(self, Vb2, c_2b, A):
-    #     A1 = self.A1(Vb2)
-    #     CDi_AR = pi * (A1**2 + cp.multiply(self.Nn, A) @ A)
-    #     cd0 = self.CD0_2D(Vb2, c_2b, A, A1)
-    #     return Vb2 * (CDi_AR + self.w_th @ cp.multiply(cd0, c_2b))
-
-    # def optimize_(self, x0, alg=None, options={}):
-    #     opt = {}
-    #     opt.update(options)
-    #     Vb20, c_2b0, A0 = self.get_vars(x0)
-        
-    #     Vb20, c_2b0, A0 = self.get_vars(x0)
-    #     d = dict(
-    #         Vb2 = cp.Variable(pos=True, value=np.squeeze(Vb20)),
-    #         A = cp.Variable(pos=True, value=A0, shape=self.Na),
-    #         c_2b = cp.Variable(pos=True, value=c_2b0, shape=self.Ny)
-    #     )
-    #     obj = cp.Minimize(self.obj(d))
-    #     con = []
-    #     for key in self.varNames:
-    #         if np.isfinite(self.ub[key]).any():
-    #             import pdb; pdb.set_trace()
-    #             con.append(d[key] <= self.ub[key])
-    #         if np.isfinite(self.lb[key]).all() and (np.sign(self.lb[key]) > 0).all():
-    #             con.append(self.lb[key]/d[key] <= 1.)
-    #     # con = [d["c_2b"] >= self.lb["c_2b"]]
-
-    #     import pdb; pdb.set_trace()
-    #     prob = cp.Problem(obj, con)
-    #     prob.solve(gp=True, **opt)
-    #     if prob.status == "unbounded":
-    #         x = self.set_vars({})
-    #         raise ValueError("Problem is unbounded")
-    #     else:
-    #         x = self.set_vars(
-    #             {key: d[key].value for key in self.varNames})
-    #     return x, prob

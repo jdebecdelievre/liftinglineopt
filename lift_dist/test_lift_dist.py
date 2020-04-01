@@ -50,7 +50,7 @@ def test_ellipse_ND():
     LD = LiftDistND(1, Na=5, Ny=11, cd0_model='flat_plate',cl_model='flat_plate')
     LD.update_bounds({"lb":{"c_b": 0.1, "A": -0.1 * np.ones(LD.Na)}, "ub":{"c_b":0.3, "A": 0.1 * np.ones(LD.Na)}})
     x0 = LD.initial_guess() 
-    x, sol = LD.optimize(x0, alg="SNOPT", restarts=10)
+    x, sol = LD.optimize(x0, alg="IPOPT", restarts=10)
     Cw_AR, c_b, A = LD.get_vars(x)
     assert np.allclose(A, 0., atol= 1e-4), f"Optimal distribution is not elliptical: {A}"
     
@@ -141,7 +141,7 @@ def test_GP():
 
 
 if __name__ == "__main__":
-    # test_get_var()
-    # test_ellipse_Vb()
-    # test_GP()
+    test_get_var()
+    test_ellipse_Vb()
+    test_GP()
     test_ellipse_ND()
