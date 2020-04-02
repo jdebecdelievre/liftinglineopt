@@ -5,9 +5,13 @@ import quadpy
 from abc import ABC, abstractmethod
 import cvxpy as cp
 from pyoptsparse import Optimization, OPT
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
+from jax.config import config
+config.update("jax_enable_x64", True)
 
 from jax import grad, jit, jacfwd
+
+Variable = namedtuple("Variable", ['size', 'index', 'dflt', 'ub', 'lb', 'scale', 'offset'])
 
 rho = 1.225
 pi = np.pi
@@ -47,17 +51,15 @@ def even_sine_exp(theta_pts, Na, non_sorted=False):
 
 class BaseLiftDist():
     def __init__(self,
-                varNames,
-                varSize,
-                varDflt,
-                default_ub,
-                default_lb,
+                variables,
                 W,
                 Ny=11, Na=3,
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
-                bounds=None):
+                bounds=None,
+                usejit=True,
+                ):
 
         assert 2*int(Ny/2) + 1 == Ny, f"Ny ({Ny}) must be an odd number"
         self.W = W
@@ -87,37 +89,48 @@ class BaseLiftDist():
         self.ub, self.lb = None, None
         self.update_bounds(bounds)
 
+        # Define objective
+        # Required for jit/grad that it not be a method
+        def objective(xdict, constraints):
+            obj = self.objective_(xdict, constraints)
+            # for key in smooth_penalty:
+            #     obj["obj"] = obj["obj"] + (smooth_penalty[key] / self.w_th[1:]) @ ((xdict[key][1:] - xdict[key][:-1])**2)
+            return obj
+
+        # Precompile and differentiate
+        if usejit:
+            self.objective = jit(objective, static_argnums=1)
+            self.gradient = jit(jacfwd(objective, 0), static_argnums=1)
+        else:
+            self.objective = objective
+            self.gradient = jacfwd(objective, 0)
+
     @abstractmethod
-    def objective(self, xdict, constraints):
+    def objective_(self, xdict, constraints):
         pass
+
+    def addCon(self, optProb, constraint, x0):
+        f0 = self.objective_(x0, [constraint])
+        optProb.addConGroup(constraint["name"], f0[constraint["name"]].shape[0],
+        lower=constraint['lb'],
+        upper=constraint["ub"]
+        )
+        return optProb
 
     def optimize(self, x0=None, alg='IPOPT', restarts=1, 
                     solver_options={}, obj_scale=1.,
-                    usejit=True,
                     smooth_penalty={},
-                    constraints={}):
+                    constraints=[],
+                    sens=None):
         options = {}
         options.update(solver_options)
         if x0 is None:
             x0 = self.initial_guess()
         x0 = self.get_vars(x0, dic=True)
 
-        # Define objective
-        def objective(xdict):
-            obj = self.objective(xdict, constraints)
-            for key in smooth_penalty:
-                obj["obj"] = obj["obj"] + (smooth_penalty[key] / self.w_th[1:]) @ ((xdict[key][1:] - xdict[key][:-1])**2)
-            return obj
-
-        # Precompile and differentiate
-        gradient = jacfwd(objective)
-        if usejit:
-            objective = jit(objective)
-            gradient = jit(gradient)
-
         # Add fail flag
-        def objfun(xdict): return objective(xdict), 0
-        def sensfun(xdict, funcs): return gradient(xdict), 0
+        def objfun(xdict): return self.objective(xdict, constraints), 0
+        def sensfun(xdict, funcs): return self.gradient(xdict, constraints), 0
         init = objfun(x0)[0]
 
         # Create optimization problem
@@ -129,12 +142,9 @@ class BaseLiftDist():
                     upper=ub[key], lower=lb[key],  
                     value=x0[key])
         optProb.addObj('obj', scale=obj_scale)
+
         for con in constraints:
-            optProb.addConGroup(con, init[con].shape[0],
-                        lower=constraints[con][0],
-                        upper=constraints[con][1]
-                        )
-        
+            optProb = self.addCon(optProb, con, x0)
         # Run optimizer with various initial conditions
         best = init["obj"]
         best_sol = optProb
@@ -148,7 +158,7 @@ class BaseLiftDist():
                         var.value = val0
                     
                 # solve
-                sol = opt(optProb, sens='fd')
+                sol = opt(optProb, sens=sensfun if sens is not None else sens)
                 if sol.objectives['obj'].value < best:
                     best = sol.objectives['obj'].value
                     best_sol = sol
@@ -199,7 +209,7 @@ class BaseLiftDist():
             if k in dict_var:
                 x[val[0]:val[1]] = dict_var[k]
         return x
-
+    
     def update_bounds(self, bounds):
         if bounds is None:
             bounds = {"ub":{}, "lb":{}}
@@ -219,7 +229,9 @@ class LiftDistVb(BaseLiftDist):
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
-                bounds=None):
+                bounds=None,
+                usejit=True,
+                ):
 
         varNames = ["Vb2", "c_2b", "A"]
         varSize = {"Vb2":1, "c_2b":Ny, "A":Na}
@@ -240,7 +252,8 @@ class LiftDistVb(BaseLiftDist):
                 cd0_model = cd0_model,
                 cd0_val= cd0_val,
                 cl_model = cl_model,
-                bounds = bounds)
+                bounds = bounds, 
+                usejit=usejit)
 
         self.w_th, self.theta_pts, self.y_pts = quadrature_weights(Ny)
         self.M, self.M1, self.M_, self.M1_, self.Nn = even_sine_exp(self.theta_pts, Na)
@@ -260,11 +273,13 @@ class LiftDistVb(BaseLiftDist):
     def _AR(self, c_2b):
         return self.w_th @ c_2b
    
-    def objective(self, xdict, constraints={}):
+    def objective_(self, xdict, constraints=[]):
         A1 = self.A1(xdict["Vb2"])
         CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
         cd0 = self.CD0_2D(xdict["Vb2"], xdict["c_2b"], xdict["A"], A1)
-        funcs = {"obj":xdict["Vb2"] * (CDi_AR + self.w_th @ (cd0 * xdict["c_2b"]))}
+        funcs = {"obj":
+                    xdict["Vb2"] * (CDi_AR + self.w_th @ (cd0 * xdict["c_2b"]))
+                }
         for key in constraints:
             if key == "clCon":
                 funcs.update({
@@ -299,7 +314,9 @@ class LiftDistND(BaseLiftDist):
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
-                bounds=None):
+                bounds=None,
+                usejit=True,
+                ):
 
         varNames = ["Cw_AR", "c_b", "A"]
         varSize = {"Cw_AR":1, "c_b":Ny, "A":Na}
@@ -320,7 +337,8 @@ class LiftDistND(BaseLiftDist):
                 cd0_model = cd0_model,
                 cd0_val= cd0_val,
                 cl_model = cl_model,
-                bounds = bounds)
+                bounds = bounds,
+                usejit=usejit)
 
         self.w_th, self.theta_pts, self.y_pts = quadrature_weights(2*Ny - 1)
         self.M, self.M1, self.M_, self.M1_, self.Nn = even_sine_exp(self.theta_pts, Na)
@@ -363,23 +381,47 @@ class LiftDistND(BaseLiftDist):
         L_D = CL / (CD0 + CDi)
         return A1, AR, Re, cd0, CD0, cl, CL, CDi, L_D
 
-    def objective(self, xdict, constraints={}):
+    def objective_(self, xdict, constraints=[]):
         A1 = self.A1(xdict["Cw_AR"])
         CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
         cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], xdict["A"], A1)
-        funcs = {"obj":(CDi_AR + self.w_th @ (cd0 * xdict["c_b"]))/xdict["Cw_AR"]}
-        for key in constraints:
-            if key == "clCon":
+        funcs = {"obj":
+                    (CDi_AR + self.w_th @ (cd0 * xdict["c_b"]))/xdict["Cw_AR"]
+                }
+        for con in constraints:
+            if con['name'] == "clCon":
                 funcs.update({
-                    "clCon": self.cl(A1, xdict["A"], xdict["c_b"])
+                    # "clCon": self.cl(A1, xdict["A"], xdict["c_b"])
+                    "clCon_ub":  4 * (self.M1 * A1 + self.M @ xdict["A"]) - con['ub'] * xdict["c_b"],
+                    "clCon_lb": -4 * (self.M1 * A1 + self.M @ xdict["A"]) + con['lb'] * xdict["c_b"],
                 })
-            elif key == "ReCon":
+            elif con['name'] == "ReCon":
                 funcs.update({
-                    "ReCon": self.Re(xdict["Cw_AR"], xdict["c_b"])
+                    "ReCon": (self.Re(xdict["Cw_AR"], xdict["c_b"]) - con['lb'])/(con['ub'] - con['lb'])
                 })
             else:
-                raise ValueError(f"{key} is not a valid constraint")
+                raise ValueError(f"{con['name']} is not a valid constraint")
         return funcs
+
+    def addCon(self, optProb, constraint, x0):
+        f0 = self.objective_(x0, [constraint])
+        if constraint['name'] == 'clCon':
+            optProb.addConGroup('clCon'+'_ub', f0['clCon'+'_ub'].shape[0],
+            upper=0.,
+            # linear=True,
+            # jac=self.gradient(x0, [constraint])['clCon'+'_ub']
+            )
+            optProb.addConGroup('clCon' + '_lb', f0['clCon'+'_lb'].shape[0],
+            upper=0.,
+            # linear=True,
+            # jac=self.gradient(x0, [constraint])['clCon'+'_lb']
+            )
+        elif constraint['name'] == "ReCon":
+            optProb.addConGroup('ReCon', f0['ReCon'].shape[0],
+            upper=1., lower=0.)
+        else:
+            return super().addCon(optProb, constraint, x0)
+        return optProb
 
     def alpha_i(self, A1, A):
         return self.M_ @ A + self.M1_ * A1

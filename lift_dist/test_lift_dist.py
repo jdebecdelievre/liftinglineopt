@@ -140,8 +140,41 @@ def test_GP():
     assert np.allclose(A, 0., atol=1e-4), f"A {A} is not close to 0: converged to non elliptica distribution"
 
 
+class LDtestUB(LiftDistND):
+    def objective_(self, xdict, constraints):
+        obj = super().objective_(xdict, constraints)
+        A1 = self.A1(xdict["Cw_AR"])
+        obj['obj'] = np.sum((self.cl(A1, xdict['A'], xdict['c_b']))**2)
+        return obj
+
+class LDtestLB(LiftDistND):
+    def objective_(self, xdict, constraints):
+        obj = super().objective_(xdict, constraints)
+        A1 = self.A1(xdict["Cw_AR"])
+        obj['obj'] = -np.sum((self.cl(A1, xdict['A'], xdict['c_b']))**2) #\
+                    #  -np.sum(self.Re(xdict['Cw_AR'], xdict['c_b']**2)/100000**2) 
+        return obj
+
+def test_bounds():
+    LD = LDtestUB(1, Na=5, Ny=11, cd0_model='flat_plate',cl_model='flat_plate',
+                    bounds={"lb":{"Cw_AR":0.2}, "ub":{"Cw_AR":0.8}})
+    x0 = LD.initial_guess()
+    A1, AR, Re, cd0, CD0, cl, CL, CDi, L_D = LD.metrics(LD.get_vars(x0, dic=True))
+    print(Re)
+    print(cl)
+    x, sol = LD.optimize(x0, alg='IPOPT', 
+                    # constraints=[dict(name="clCon", ub=1., lb=0.1),
+                    #             dict(name="ReCon", ub=200000., lb=100000)], 
+                    solver_options={'tol':1e-12, "max_iter":300}, sens='fd')
+    Cw_AR, c_b, A = LD.get_vars(x)
+    A1, AR, Re, cd0, CD0, cl, CL, CDi, L_D = LD.metrics(LD.get_vars(x, dic=True))
+    print(Re)
+    print(cl)
+
 if __name__ == "__main__":
-    test_get_var()
-    test_ellipse_Vb()
-    test_GP()
-    test_ellipse_ND()
+    # test_get_var()
+    # test_ellipse_Vb()
+    # test_GP()
+    # test_ellipse_ND()
+
+    test_bounds()

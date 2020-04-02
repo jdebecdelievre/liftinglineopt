@@ -25,32 +25,33 @@ def gensol(LD, file_name='sol', restarts=1):
     x, sol = LD.optimize(x0, "IPOPT", 
             obj_scale=10.,
             solver_options={"max_iter":2000, 'tol':1e-10, 'output_file':file_name+".ipopt"},
-            usejit=False,
+            # usejit=False,
             restarts=restarts,
-            smooth_penalty={"c_b":1e-8},
-            constraints={
-            "ReCon":[100000,
-                    400000],
-                "clCon":[-0.4,1.1]}
-            )
+            smooth_penalty={},
+            # {"c_b":1e-8},
+            constraints=[
+            dict(name="ReCon", lb=100000, ub=400000),
+            dict(name="clCon", lb=-0.4,ub=1.1)]
+    )
     np.save(file_name, x)
     return x
 
 W = 100
 LD = LiftDistND(W, Na=4, Ny=21, 
-                cd0_model ="flat_plate",
-                cd0_val = cd0_value,
+                cd0_model ="constant",
+                cd0_val = 0.01,#cd0_value,
                 cl_model='flat_plate',
                 bounds={
                     'ub':{"c_b":0.9, "A":.1},
                     'lb':{"c_b":0.01, "A":-.1, "Cw_AR":0.001}
-                }
+                },
+                usejit=False,
                 )
 
 if __name__ == "__main__":
-    # gensol(LD)
-    WW = np.linspace(1,200, 8)
-    for i in range(1,len(WW)):
-        LD.W = WW[i]
-        gensol(LD, f"rslt/sol_{i}", restarts=5)
-    np.save("rslt/w", WW)
+    gensol(LD)
+    # WW = np.linspace(1,200, 1)
+    # for i in range(len(WW)):
+    #     LD.W = WW[i]
+    #     gensol(LD, f"rslt_/sol_{i}", restarts=1)
+    # np.save("rslt_/w", WW)
