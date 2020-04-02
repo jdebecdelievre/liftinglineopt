@@ -20,32 +20,37 @@ def cd0_value(cl, Re):
     z = z @ model["w1"].T + model["b1"]
     return z * model["output_std"] + model["output_mean"]
 
-def gensol(LD):
+def gensol(LD, file_name='sol', restarts=1):
     x0 = LD.initial_guess()
-    print(x0)
     x, sol = LD.optimize(x0, "IPOPT", 
             obj_scale=10.,
-            solver_options={"max_iter":5000},
-            usejit=True,
-            restarts=1,
-            smooth_penalty={"c_b":0.01},
+            solver_options={"max_iter":2000, 'tol':1e-10, 'output_file':file_name+".ipopt"},
+            usejit=False,
+            restarts=restarts,
+            smooth_penalty={"c_b":1e-8},
             constraints={
             "ReCon":[100000,
                     400000],
                 "clCon":[-0.4,1.1]}
             )
-    np.save("sol", x)
+    np.save(file_name, x)
+    return x
 
 W = 100
-LD = LiftDistND(W, Na=5, Ny=11, 
+LD = LiftDistND(W, Na=4, Ny=21, 
                 cd0_model ="flat_plate",
                 cd0_val = cd0_value,
                 cl_model='flat_plate',
                 bounds={
-                    'ub':{"c_b":0.5, "A":.1},
-                    'lb':{"c_b":0.1, "A":-.1, "Cw_AR":0.001}
+                    'ub':{"c_b":0.9, "A":.1},
+                    'lb':{"c_b":0.01, "A":-.1, "Cw_AR":0.001}
                 }
                 )
 
 if __name__ == "__main__":
-    gensol(LD)
+    # gensol(LD)
+    WW = np.linspace(1,200, 8)
+    for i in range(1,len(WW)):
+        LD.W = WW[i]
+        gensol(LD, f"rslt/sol_{i}", restarts=5)
+    np.save("rslt/w", WW)

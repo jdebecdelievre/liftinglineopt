@@ -33,7 +33,7 @@ def even_sine_exp(theta_pts, Na, non_sorted=False):
     else:
         assert (theta_pts>0).all() and (theta_pts<np.pi).all()
     
-    Nn = 2*np.arange(1, Na+1)[:, None]
+    Nn = 2*np.arange(1, Na+1)[:, None] + 1
     M = np.sin(theta_pts @ Nn.T)
     M1 = np.sin(theta_pts)[:, 0]
     M_ = (M * Nn.T)  /  (np.sin(theta_pts) + 1e-18)
@@ -104,7 +104,10 @@ class BaseLiftDist():
 
         # Define objective
         def objective(xdict):
-            return self.objective(xdict, constraints)
+            obj = self.objective(xdict, constraints)
+            for key in smooth_penalty:
+                obj["obj"] = obj["obj"] + (smooth_penalty[key] / self.w_th[1:]) @ ((xdict[key][1:] - xdict[key][:-1])**2)
+            return obj
 
         # Precompile and differentiate
         gradient = jacfwd(objective)
@@ -140,14 +143,12 @@ class BaseLiftDist():
             for i in range(restarts):
                 # initial condition
                 d0 = self.get_vars(self.initial_guess(), dic=True)
-                print(d0)
-                print(objfun(d0)[0])
                 for key in d0:
                     for var, val0 in zip(optProb.variables[key], d0[key]):
                         var.value = val0
                     
                 # solve
-                sol = opt(optProb, sens=sensfun)
+                sol = opt(optProb, sens='fd')
                 if sol.objectives['obj'].value < best:
                     best = sol.objectives['obj'].value
                     best_sol = sol
@@ -348,7 +349,20 @@ class LiftDistND(BaseLiftDist):
 
     def _AR(self, c_b):
         return self.w_th @ c_b
-   
+
+    def metrics(self, xdict):
+        A1 = self.A1(xdict["Cw_AR"])
+        _AR = self._AR(xdict["c_b"])
+        AR = 1 / _AR 
+        Re = self.Re(xdict["Cw_AR"], xdict["c_b"])
+        cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], xdict["A"], A1)
+        CD0 = self.w_th @ (cd0 * xdict["c_b"]) / _AR
+        CDi = self.CDi(A1, xdict["A"], _AR)
+        cl = self.cl(A1, xdict["A"], xdict["c_b"])
+        CL = self.w_th @ (cl * xdict["c_b"]) / _AR
+        L_D = CL / (CD0 + CDi)
+        return A1, AR, Re, cd0, CD0, cl, CL, CDi, L_D
+
     def objective(self, xdict, constraints={}):
         A1 = self.A1(xdict["Cw_AR"])
         CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
