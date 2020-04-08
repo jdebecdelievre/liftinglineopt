@@ -5,6 +5,7 @@ pi = np.pi
 nu = 1.81*1e-5
 from jax import jit
 from jax import numpy as np
+# import numpy as np
 
 def sigmoid(x):
     return 0.5 * (np.tanh(x / 2) + 1)
@@ -24,34 +25,37 @@ def gensol(LD, file_name='sol', restarts=1):
     x0 = LD.initial_guess()
     x, sol = LD.optimize(x0, "IPOPT", 
             obj_scale=10.,
-            solver_options={"max_iter":2000, 'tol':1e-10, 'output_file':file_name+".ipopt"},
+            solver_options={"max_iter":2500, 
+                        'tol':1e-10, 'output_file':file_name+".ipopt",
+                        'print_level':1},
             # usejit=False,
             restarts=restarts,
-            smooth_penalty={},
             # {"c_b":1e-8},
             constraints=[
             dict(name="ReCon", lb=100000, ub=400000),
-            dict(name="clCon", lb=-0.4,ub=1.1)]
+            dict(name="clCon", lb=-0.4,ub=1.1)],
+            smooth_penalty = {'c_b':1e-1},
+            usejit=True
     )
     np.save(file_name, x)
     return x
 
-W = 100
+W = 10
+Ny = 21
+Na = 4
+c_b_ub = 0.5 * np.ones(Ny)
+c_b_lb = 1e-10 * np.ones(Ny)
+# c_b_lb[0] = 0.
+# c_b_ub[0] = 0.
 LD = LiftDistND(W, Na=4, Ny=21, 
-                cd0_model ="constant",
-                cd0_val = 0.01,#cd0_value,
+                cd0_model ="function",
+                cd0_val = cd0_value,
                 cl_model='flat_plate',
                 bounds={
-                    'ub':{"c_b":0.9, "A":.1},
-                    'lb':{"c_b":0.01, "A":-.1, "Cw_AR":0.001}
-                },
-                usejit=False,
+                    'ub':{"c_b":c_b_ub, "A":.1},
+                    'lb':{"c_b":c_b_lb, "A":-.1, "Cw_AR":1e-10}
+                }
                 )
 
 if __name__ == "__main__":
-    gensol(LD)
-    # WW = np.linspace(1,200, 1)
-    # for i in range(len(WW)):
-    #     LD.W = WW[i]
-    #     gensol(LD, f"rslt_/sol_{i}", restarts=1)
-    # np.save("rslt_/w", WW)
+    x = gensol(LD)

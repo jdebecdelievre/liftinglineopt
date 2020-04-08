@@ -1,4 +1,8 @@
+from jax.config import config
+config.update("jax_enable_x64", True)
+from jax import grad, jit, jacfwd
 import numpy as np
+from jax import numpy as npj
 import matplotlib.pyplot as plt
 import torch
 import quadpy
@@ -6,19 +10,54 @@ from abc import ABC, abstractmethod
 import cvxpy as cp
 from pyoptsparse import Optimization, OPT
 from collections import OrderedDict, namedtuple
-from jax.config import config
-config.update("jax_enable_x64", True)
 
-from jax import grad, jit, jacfwd
-
-Variable = namedtuple("Variable", ['size', 'index', 'dflt', 'ub', 'lb', 'scale', 'offset'])
 
 rho = 1.225
 pi = np.pi
 nu = 1.81*1e-5
 
-# x = [(Vb)^2, c/2b, A]
-#      1,      Ny,  Na 
+class ArrayItem(object):
+    def __init__(self, name):
+        self.name = "_" + name
+    def __get__(self, instance, owner):
+        value = getattr(instance, self.name)
+        try:
+            if np.atleast_1d(value).shape[0] != instance.size:
+                return value * np.ones(instance.size)
+            else:
+                return value
+        except AttributeError:
+            raise AttributeError("Size must be set first")
+    def __set__(self, instance, value):
+        setattr(instance, self.name, value)
+
+class Variable():
+    ub = ArrayItem('ub')
+    dflt = ArrayItem('dflt')
+    lb = ArrayItem('lb')
+
+    def __init__(self, name, size, index, dflt, ub, lb, scale, offset):
+        self.name = name
+        self.size = size
+        self.index = index
+        self._dflt = dflt
+        self._ub = ub
+        self._lb = lb
+        self.scale = scale
+        self.offset = offset
+
+    def __repr__(self):
+        return (f"\n Variable {self.name} \n size {self.size} \n" 
+                f"index {self.index} \n default {self._dflt} \n"
+                f"up bnd {self._ub} \n low bnd {self._lb} \n"
+                f"scale {self.scale} \n offset {self.offset}")
+
+class VariablesDict(dict):
+    def __setitem__(self, key, value):
+        if key not in self:
+            raise KeyError("Invalid key")
+        else:
+            return super().__setitem__(key, value)
 
 def quadrature_weights(Ny):
     scheme = quadpy.line_segment.clenshaw_curtis(Ny)
@@ -57,8 +96,7 @@ class BaseLiftDist():
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
-                bounds=None,
-                usejit=True,
+                bounds={"lb":{}, "ub":{}}
                 ):
 
         assert 2*int(Ny/2) + 1 == Ny, f"Ny ({Ny}) must be an odd number"
@@ -70,47 +108,39 @@ class BaseLiftDist():
         self.cd0_val = cd0_val
         self.cl_model = cl_model
 
-        self.varNames = varNames
-        self.default_lb = default_lb
-        self.default_ub = default_ub
-        self.varIndex = OrderedDict()
-        self.varSize  = OrderedDict() 
-        self.varDflt  = OrderedDict() 
+        self.variables = variables
+        for var in variables:
+            setattr(self, var, variables[var])
+
+        for var, bnd in bounds['lb'].items():
+            self.variables[var].lb = bnd
+        for var, bnd in bounds['ub'].items():
+            self.variables[var].ub = bnd
         
-        index = 0
         self.Nx = 0
-        for key in varNames:
-            self.varSize[key]  = varSize[key]
-            self.Nx += varSize[key]
-            self.varDflt[key]  = varDflt[key]
-            self.varIndex[key] = (index, index + self.varSize[key])
-            index += self.varSize[key]
+        for key in variables:
+            self.Nx += variables[key].size
 
-        self.ub, self.lb = None, None
-        self.update_bounds(bounds)
+        self.y_pts = None
 
-        # Define objective
-        # Required for jit/grad that it not be a method
-        def objective(xdict, constraints):
-            obj = self.objective_(xdict, constraints)
-            # for key in smooth_penalty:
-            #     obj["obj"] = obj["obj"] + (smooth_penalty[key] / self.w_th[1:]) @ ((xdict[key][1:] - xdict[key][:-1])**2)
-            return obj
-
-        # Precompile and differentiate
-        if usejit:
-            self.objective = jit(objective, static_argnums=1)
-            self.gradient = jit(jacfwd(objective, 0), static_argnums=1)
-        else:
-            self.objective = objective
-            self.gradient = jacfwd(objective, 0)
+        # Differentiate
+        self.gradient = jacfwd(self.objective, 0)
 
     @abstractmethod
-    def objective_(self, xdict, constraints):
+    def objective(self, xdict, constraints):
         pass
 
+    def smoothness_penalty_(self, xdict, l):
+        # if 'smooth_penalty' in constraints:
+        dy = np.diff(np.squeeze(self.y_pts))
+        obj = 0
+        for key in l:
+            obj = obj + \
+                l[key] * np.sum((xdict[key][1:] - xdict[key][:-1])**2 / dy)
+        return obj
+
     def addCon(self, optProb, constraint, x0):
-        f0 = self.objective_(x0, [constraint])
+        f0 = self.objective(x0, [constraint])
         optProb.addConGroup(constraint["name"], f0[constraint["name"]].shape[0],
         lower=constraint['lb'],
         upper=constraint["ub"]
@@ -119,32 +149,44 @@ class BaseLiftDist():
 
     def optimize(self, x0=None, alg='IPOPT', restarts=1, 
                     solver_options={}, obj_scale=1.,
-                    smooth_penalty={},
                     constraints=[],
-                    sens=None):
+                    smooth_penalty={},
+                    sens=None,
+                    usejit=False):
         options = {}
         options.update(solver_options)
         if x0 is None:
             x0 = self.initial_guess()
-        x0 = self.get_vars(x0, dic=True)
 
+        # Define objective
+        # Required for jit/grad that it not be a method
+        def objective_(xdict, constraints, smooothness_penalty={}):
+            obj = self.objective(xdict, constraints)
+            obj['obj'] = obj['obj'] + self.smoothness_penalty_(xdict, smooothness_penalty)
+            return obj
+        gradient = jacfwd(objective_, 0)
+        
+
+        # Compile
+        if usejit:
+            objective_ = jit(objective_, static_argnums=(1,2))
+            gradient = jit(gradient, static_argnums=(1,2))
+        
         # Add fail flag
-        def objfun(xdict): return self.objective(xdict, constraints), 0
-        def sensfun(xdict, funcs): return self.gradient(xdict, constraints), 0
+        def objfun(xdict): return objective_(xdict, constraints, smooth_penalty), 0
+        def sensfun(xdict, funcs): return gradient(xdict, constraints, smooth_penalty), 0
         init = objfun(x0)[0]
 
         # Create optimization problem
         optProb = Optimization('llOpt', objfun)
-        ub = self.default_ub
-        lb = self.default_lb
-        for key in self.varNames:
-            optProb.addVarGroup(key, self.varSize[key], 
-                    upper=ub[key], lower=lb[key],  
-                    value=x0[key])
+        for key, var in self.variables.items():
+            optProb.addVarGroup(key, var.size, 
+                    upper=var.ub, lower=var.lb,  
+                    value=x0[key], scale=var.scale, offset=var.offset)
         optProb.addObj('obj', scale=obj_scale)
-
         for con in constraints:
             optProb = self.addCon(optProb, con, x0)
+
         # Run optimizer with various initial conditions
         best = init["obj"]
         best_sol = optProb
@@ -152,13 +194,13 @@ class BaseLiftDist():
             opt = OPT(alg, options=options)
             for i in range(restarts):
                 # initial condition
-                d0 = self.get_vars(self.initial_guess(), dic=True)
+                d0 = self.initial_guess()
                 for key in d0:
-                    for var, val0 in zip(optProb.variables[key], d0[key]):
+                    for var, val0 in zip(optProb.variables[key], np.atleast_1d(d0[key])):
                         var.value = val0
                     
                 # solve
-                sol = opt(optProb, sens=sensfun if sens is not None else sens)
+                sol = opt(optProb, sens=sensfun if sens is None else sens)
                 if sol.objectives['obj'].value < best:
                     best = sol.objectives['obj'].value
                     best_sol = sol
@@ -168,58 +210,49 @@ class BaseLiftDist():
 
         # Return best solution
         D = best_sol.getDVs()
-        x = self.set_vars(D)
         print(sol)
-        return x, sol
+        return D, sol
 
-    def initial_guess(self, dict_var=None):
+    def initial_guess(self, dict_var=None, dic=True):
         if dict_var is None:
             dict_var = {}
 
         # Set to default:
-        x_dflt = self.varDflt.copy()
+        xdict = {key:var.dflt for key, var in self.variables.items()}
 
         # If finite bounds are provided, draw randomly inbetween the bounds
-        for key in self.varNames:
-            if np.isfinite(self.ub[key]).all() and np.isfinite(self.lb[key]).all():
-                x_dflt[key] = 0.9*(self.ub[key]-self.lb[key])/2 * np.random.random() + (self.ub[key]+self.lb[key])/2
+        for key, var in self.variables.items():
+            if np.isfinite(var.ub ).all() and np.isfinite(var.lb).all():
+                xdict[key] = 0.9*(var.ub- var.lb)/2 * np.random.random() + (var.ub + var.lb)/2
         
         # update with provided values
-        x_dflt.update(dict_var)
+        xdict.update(dict_var)
 
-        return self.set_vars(x_dflt)
+        if dic:
+            return xdict
+        else:
+            return self.set_vars(xdict)
 
-    def get_vars(self, x, dic=False):
+    def get_vars(self, x, dic=True):
         # Vb2 = x[0]
         # c_2b = x[1:1+self.Ny]
         # A = x[-self.Na:]
         if dic:
             xvars = OrderedDict()
-            for key, idx in self.varIndex.items():
-                xvars[key] = x[idx[0]:idx[1]]
+            for key, var in self.variables.items():
+                xvars[key] = x[var.index[0]:var.index[1]]
             return xvars
         else:
-            return (x[idx[0]:idx[1]] for key, idx in self.varIndex.items())
+            return (x[var.index[0]:var.index[1]] for key, var in self.variables.items())
 
     def set_vars(self, dict_var, x=None):
         if x is None:
             x = np.zeros(self.Nx)
         fail = 0
-        for k, val in self.varIndex.items():
+        for k, var in self.variables.items():
             if k in dict_var:
-                x[val[0]:val[1]] = dict_var[k]
+                x[var.index[0]:var.index[1]] = dict_var[k]
         return x
-    
-    def update_bounds(self, bounds):
-        if bounds is None:
-            bounds = {"ub":{}, "lb":{}}
-
-        if self.ub is None:
-            # setting self.bounds for the first time
-            self.ub = self.default_ub
-            self.lb = self.default_lb
-        self.ub.update(bounds["ub"])
-        self.lb.update(bounds["lb"])
 
 
 # x = [(Vb)^2, c/2b, A]
@@ -229,31 +262,50 @@ class LiftDistVb(BaseLiftDist):
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
-                bounds=None,
-                usejit=True,
+                bounds={"lb":{}, "ub":{}},
                 ):
 
-        varNames = ["Vb2", "c_2b", "A"]
-        varSize = {"Vb2":1, "c_2b":Ny, "A":Na}
-        varDflt = {"Vb2":18., "c_2b":0.15, "A":np.random.uniform(0,1., Na)}
-        default_ub = {"Vb2":np.inf, "c_2b": np.ones(Ny),
-                "A": 10 * np.ones(Na)}
-        default_lb = {"Vb2":0., "c_2b":np.zeros(Ny),
-                "A":-10. * np.ones(Na)}
+        variables = VariablesDict({
+            "Vb2":Variable(
+                        name = "Vb2",
+                        size = 1,
+                        dflt = 0.1,
+                        ub = 50.,
+                        lb = 5.,
+                        index = (0,1),
+                        scale = 0.1,
+                        offset = 0.
+                    ),
+            "c_2b" : Variable(
+                        name = "c_b",
+                        size = Ny,
+                        dflt = 0.1,
+                        ub = 1.,
+                        lb = 0.,
+                        index = (1,Ny+1),
+                        scale = 1.,
+                        offset = 0.
+                    ),
+            "A" :  Variable(
+                        name = "A",
+                        size = Na,
+                        dflt = 0.1,
+                        ub = .1,
+                        lb = -.1,
+                        index = (Ny + 1, Na + Ny + 1),
+                        scale = 100.,
+                        offset = 0.
+                    )
+        })
 
         super().__init__(
-                varNames = varNames,
-                varSize = varSize,
-                varDflt = varDflt,
-                default_ub=default_ub,
-                default_lb=default_lb,
+                variables = variables,
                 W = W,
                 Ny = Ny, Na = Na,
                 cd0_model = cd0_model,
                 cd0_val= cd0_val,
                 cl_model = cl_model,
-                bounds = bounds, 
-                usejit=usejit)
+                bounds = bounds)
 
         self.w_th, self.theta_pts, self.y_pts = quadrature_weights(Ny)
         self.M, self.M1, self.M_, self.M1_, self.Nn = even_sine_exp(self.theta_pts, Na)
@@ -273,7 +325,20 @@ class LiftDistVb(BaseLiftDist):
     def _AR(self, c_2b):
         return self.w_th @ c_2b
    
-    def objective_(self, xdict, constraints=[]):
+    def metrics(self, xdict):
+        A1 = self.A1(xdict["Vb2"])
+        _AR = self._AR(xdict["c_2b"])
+        AR = 1 / _AR 
+        Re = self.Re(xdict["Vb2"], xdict["c_2b"])
+        cd0 = self.CD0_2D(xdict["Vb2"], xdict["c_2b"], xdict["A"], A1)
+        CD0 = self.w_th @ (cd0 * xdict["c_2b"]) / _AR
+        CDi = self.CDi(A1, xdict["A"], _AR)
+        cl = self.cl(A1, xdict["A"], xdict["c_2b"])
+        CL = self.w_th[1:-1] @ (cl * xdict["c_2b"])[1:-1] / _AR
+        L_D = CL / (CD0 + CDi)
+        return A1, AR, Re, cd0, CD0, cl, CL, CDi, L_D
+
+    def objective(self, xdict, constraints=[]):
         A1 = self.A1(xdict["Vb2"])
         CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
         cd0 = self.CD0_2D(xdict["Vb2"], xdict["c_2b"], xdict["A"], A1)
@@ -314,31 +379,50 @@ class LiftDistND(BaseLiftDist):
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
-                bounds=None,
-                usejit=True,
+                bounds={"lb":{}, "ub":{}},
                 ):
 
-        varNames = ["Cw_AR", "c_b", "A"]
-        varSize = {"Cw_AR":1, "c_b":Ny, "A":Na}
-        varDflt = {"Cw_AR":0.1, "c_b":0.1, "A":0.1}
-        default_ub = {"Cw_AR":1., "c_b": np.ones(Ny),
-                "A": 10 * np.ones(Na)}
-        default_lb = {"Cw_AR":0., "c_b":np.zeros(Ny),
-                "A":-10. * np.ones(Na)}
+        variables = VariablesDict({
+            "Cw_AR":Variable(
+                        name = "Cw_AR",
+                        size = 1,
+                        dflt = 0.1,
+                        ub = 1.,
+                        lb = 0.,
+                        index = (0,1),
+                        scale = 1.,
+                        offset = 0.
+                    ),
+            "c_b" : Variable(
+                        name = "c_b",
+                        size = Ny,
+                        dflt = 0.1,
+                        ub = 1.,
+                        lb = 0.,
+                        index = (1,Ny+1),
+                        scale = 1.,
+                        offset = 0.
+                    ),
+            "A" :  Variable(
+                        name = "A",
+                        size = Na,
+                        dflt = 0.,
+                        ub = .1,
+                        lb = -.1,
+                        index = (Ny + 1, Na + Ny + 1),
+                        scale = 1000,
+                        offset = 0.
+                    )
+        })
 
         super().__init__(
-                varNames = varNames,
-                varSize = varSize,
-                varDflt = varDflt,
-                default_ub=default_ub,
-                default_lb=default_lb,
+                variables = variables,
                 W = W,
                 Ny = Ny, Na = Na,
                 cd0_model = cd0_model,
                 cd0_val= cd0_val,
                 cl_model = cl_model,
-                bounds = bounds,
-                usejit=usejit)
+                bounds = bounds)
 
         self.w_th, self.theta_pts, self.y_pts = quadrature_weights(2*Ny - 1)
         self.M, self.M1, self.M_, self.M1_, self.Nn = even_sine_exp(self.theta_pts, Na)
@@ -372,16 +456,17 @@ class LiftDistND(BaseLiftDist):
         A1 = self.A1(xdict["Cw_AR"])
         _AR = self._AR(xdict["c_b"])
         AR = 1 / _AR 
-        Re = self.Re(xdict["Cw_AR"], xdict["c_b"])
+        re = self.Re(xdict["Cw_AR"], xdict["c_b"])
         cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], xdict["A"], A1)
         CD0 = self.w_th @ (cd0 * xdict["c_b"]) / _AR
         CDi = self.CDi(A1, xdict["A"], _AR)
         cl = self.cl(A1, xdict["A"], xdict["c_b"])
         CL = self.w_th @ (cl * xdict["c_b"]) / _AR
         L_D = CL / (CD0 + CDi)
-        return A1, AR, Re, cd0, CD0, cl, CL, CDi, L_D
+        Re = self.Re(xdict["Cw_AR"], _AR)
+        return A1, AR, re, Re, cd0, CD0, cl, CL, CDi, L_D
 
-    def objective_(self, xdict, constraints=[]):
+    def objective(self, xdict, constraints=[]):
         A1 = self.A1(xdict["Cw_AR"])
         CDi_AR = pi * (A1**2 + self.Nn @ xdict["A"]**2)
         cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], xdict["A"], A1)
@@ -404,19 +489,32 @@ class LiftDistND(BaseLiftDist):
         return funcs
 
     def addCon(self, optProb, constraint, x0):
-        f0 = self.objective_(x0, [constraint])
+        x0['Cw_AR'] = np.atleast_1d(x0['Cw_AR'])
+        f0 = self.objective(x0, [constraint])
         if constraint['name'] == 'clCon':
-            optProb.addConGroup('clCon'+'_ub', f0['clCon'+'_ub'].shape[0],
-            upper=0.,
-            # linear=True,
-            # jac=self.gradient(x0, [constraint])['clCon'+'_ub']
-            )
-            optProb.addConGroup('clCon' + '_lb', f0['clCon'+'_lb'].shape[0],
-            upper=0.,
-            # linear=True,
-            # jac=self.gradient(x0, [constraint])['clCon'+'_lb']
-            )
+
+            jac=self.gradient(x0, [constraint])['clCon_ub']
+            jac['c_b'] = {'coo':[np.arange(self.Ny), np.arange(self.Ny), np.diag(jac['c_b'])],
+                        'shape':[self.Ny, self.Ny]}
+            optProb.addConGroup('clCon'+'_ub', f0['clCon_ub'].shape[0],
+                                upper=0.,
+                                linear=True,
+                                jac=jac,
+                                )
+
+            jac=self.gradient(x0, [constraint])['clCon_lb']
+            jac['c_b'] = {'coo':[np.arange(self.Ny), np.arange(self.Ny), np.diag(jac['c_b'])],
+                        'shape':[self.Ny, self.Ny]}
+            optProb.addConGroup('clCon_lb', f0['clCon_lb'].shape[0],
+                                upper=0.,
+                                linear=True,
+                                jac=jac
+                                )
         elif constraint['name'] == "ReCon":
+            jac=self.gradient(x0, [constraint])['ReCon']
+            jac['A'] = {'coo':[], 'shape':[self.Na, self.Na]}
+            jac['c_b'] = {'coo':[np.arange(self.Ny), np.arange(self.Ny), np.diag(jac['c_b'])],
+                        'shape':[self.Ny, self.Ny]}
             optProb.addConGroup('ReCon', f0['ReCon'].shape[0],
             upper=1., lower=0.)
         else:
@@ -440,12 +538,14 @@ class LiftDistND(BaseLiftDist):
         else:
             raise NotImplementedError
 
-class GPLiftDist(LiftDistVb):   
+class GPLiftDistFourrier(LiftDistVb):   
 
     def optimize(self, x0, alg=None, options={}):
         opt = {}
         opt.update(options)
-        Vb20, c_2b0, A0 = self.get_vars(x0)
+        A0 = x0['A']
+        c_2b0 = x0['c_2b']
+        Vb20 = x0['Vb2']
         d = dict(
             Vb2 = cp.Variable(pos=True, value=np.squeeze(Vb20)),
             A = cp.Variable(pos=True, value=A0, shape=self.Na),
@@ -453,19 +553,20 @@ class GPLiftDist(LiftDistVb):
         )
         obj = cp.Minimize(self.obj(d))
         con = []
-        for key in self.varNames:
-            if np.isfinite(self.ub[key]).any():
-                con.append(d[key]/self.ub[key] <= 1.)
-            if np.isfinite(self.lb[key]).all() and (np.sign(self.lb[key]) > 0).all():
-                con.append(self.lb[key]/d[key] <= 1.)
+        for key in self.variables:
+            ub = self.variables[key].ub
+            lb = self.variables[key].lb
+            if np.isfinite(ub).any():
+                con.append(d[key]/ub <= 1. * np.ones_like(ub))
+            if np.isfinite(lb).all() and (np.sign(lb) > 0).all():
+                con.append(lb/d[key] <= 1. * np.ones_like(lb) )
         prob = cp.Problem(obj, con)
         prob.solve(gp=True, **opt)
         if prob.status == "unbounded":
-            x = self.set_vars({})
+            x = {}
             raise ValueError("Problem is unbounded")
         else:
-            x = self.set_vars(
-                {key: d[key].value for key in self.varNames})
+            x= {key: d[key].value for key in self.variables}
         return x, prob
 
    
