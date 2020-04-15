@@ -93,7 +93,7 @@ def test_ellipse_Vb():
     assert np.allclose(Re, Re_), f"Computed Re {Re_} different from {Re}"
     print("\n Ellipse Re test passed")
 
-    LD = LiftDistVb(1, Na=5, Ny=11, cd0_model='flat_plate',cl_model='flat_plate', usejit=False)
+    LD = LiftDistVb(1, Na=5, Ny=11, cd0_model='flat_plate',cl_model='flat_plate')
 
     LD.variables["c_2b"].lb = 0.1
     LD.variables["c_2b"].ub = 0.3
@@ -104,7 +104,7 @@ def test_ellipse_Vb():
     assert np.allclose(x["A"], 0., atol= 1e-5), f"Optimal distribution is not elliptical: {x}"
     print(sol)
 
-def test_GP():
+def test_GPFourrier():
     LD = GPLiftDistFourrier(1, Na=5, Ny=11, cd0_model='flat_plate',cl_model='flat_plate')
     x0 = LD.initial_guess({"A":np.zeros(LD.Na)})
     A0 = x0['A']
@@ -140,6 +140,29 @@ def test_GP():
     assert np.allclose(x["c_2b"], 0.1), f"c_2b {x} not equal to lower bound 0.1"
     assert np.allclose(x["A"], 0., atol=1e-4), f"A {x} is not close to 0: converged to non elliptica distribution"
 
+
+def test_GP():
+    LD = GPLiftDist(1, Ny=11, cd0_model='flat_plate',cl_model='flat_plate')
+    x0 = LD.initial_guess()
+    
+    d = {
+        k:cp.Variable(pos=True, shape=np.atleast_1d(x0[k]).shape, value=np.atleast_1d(x0[k])) for k in x0
+    }
+
+    met = LD.metrics(d)
+
+    for m in met:
+        assert m.is_dgp(), m.name + " is not DGP"
+
+    obj = LD.objective(d, [])['obj']
+    assert obj.is_dgp(), "Objecive function is not DGP"
+
+    LD.AR.ub = 10.
+    x, prob = LD.optimize(x0)
+    # assert prob.status == "optimal", ("Problem did not converge")
+    # assert np.allclose(x["c_2b"], 0.1), f"c_2b {x} not equal to lower bound 0.1"
+    # assert np.allclose(x["A"], 0., atol=1e-4), f"A {x} is not close to 0: converged to non elliptica distribution"
+
 class LDtestUB(LiftDistND):
     def objective_(self, xdict, constraints):
         obj = super().objective_(xdict, constraints)
@@ -147,12 +170,6 @@ class LDtestUB(LiftDistND):
         obj['obj'] = np.sum((self.cl(A1, xdict['A'], xdict['c_b']))**2)
         return obj
 
-# class LDtestLB(LiftDistND):
-#     def objective_(self, xdict, constraints):
-#         obj = super().objective_(xdict, constraints)
-#         A1 = self.A1(xdict["Cw_AR"])
-#         obj['obj'] = -np.sum((self.cl(A1, xdict['A'], xdict['c_b']))**2)
-#         return obj
 
 def test_bounds():
     LD = LDtestUB(1, Na=5, Ny=11, cd0_model='flat_plate',cl_model='flat_plate',
@@ -169,8 +186,9 @@ def test_bounds():
     assert np.allclose(cl[1:], 0.1, atol=0, rtol=.2), f"cl is not at its min: {cl[1:]}"
 
 if __name__ == "__main__":
-    test_get_var()
-    test_ellipse_Vb()
-    test_GP()
-    test_ellipse_ND()
+    # test_get_var()
+    # test_ellipse_Vb()
+    # test_GPFourrier()
+    # test_GP()
+    # test_ellipse_ND()
     # test_bounds()
