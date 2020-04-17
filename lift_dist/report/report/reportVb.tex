@@ -1,0 +1,306 @@
+\documentclass[letterpaper,12pt]{article}
+\usepackage{tabularx} % extra features for tabular environment
+\usepackage{amsmath}  % improve math presentation
+\usepackage{graphicx} % takes care of graphic including machinery
+\graphicspath{ {images/} }
+\usepackage{float}
+\usepackage[margin=1in,letterpaper]{geometry} % decreases margins
+% \usepackage{cite} % takes care of citations
+\usepackage[final]{hyperref} % adds hyper links inside the generated pdf file
+\hypersetup{
+	colorlinks=true,       % false: boxed links; true: colored links
+	linkcolor=blue,        % color of internal links
+	citecolor=blue,        % color of links to bibliography
+	filecolor=magenta,     % color of file links
+	urlcolor=blue         
+}
+
+\usepackage{ar}
+\usepackage{siunitx}
+\usepackage{longtable}
+\setlength\LTleft{0pt} 
+
+\begin{document}
+\newcommand{\cldat}{\boldsymbol{{c_l}^{2D}}}
+\newcommand{\CDp}{C_{D_p}}
+\newcommand{\CDi}{C_{D_i}}
+\newcommand{\cl}[1]{{c_l}_{\bf #1}}
+\newcommand{\cdp}[1]{{c_{d_p}}_{\bf #1}}
+\newcommand{\cb}[1]{\left(
+	\frac c b 
+\right)_{#1}
+}
+\newcommand{\cddat}{\boldsymbol{{c_{d_p}}^{2D}}}
+% \newcommand{\CDi}{C_{D_i}}
+
+
+\title{Glider Optimization with Lifting Line Theory and Airfoil Wind Tunnel Data}
+\author{Jean de Becdelievre}
+\date{\today}
+\maketitle
+
+\section{Nomenclature}
+
+{\renewcommand\arraystretch{1.0}
+\noindent\begin{longtable}{@{}l @{\quad : \quad} l@{}}
+$W$  & glider weight \\
+$L, C_L$ & lift, lift coefficient \\
+$D,Di,D_0, C_D,C_{Di},C_{D_0}$& drag, induced drag, friction drag, and respective coefficients \\
+$b$ & wing span \\
+$M$ & wing area \\
+$\AR$ & wing aspect ratio \\
+$y$ & span-wise coordinate, ranging from $-b/2$ to $b/2$ \\
+$\theta$ & remapped span-wise coordinate ranging from $0$ to $\pi$ \\
+$N_{theta}$ & Number of span-wise sections \\
+$\Gamma(y) \text{ or } \Gamma(\theta)$ & span-wise strength of vortex sheet\\
+$A_n$ & nth coefficient of the Fourier expansion of $\Gamma$ \\
+$N_{A}$ & Number of Fourier coefficients considered for $\Gamma$ \\
+$M$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad M_{k,n} = \sin(n\theta_k)$ \\
+$M'$ & matrix of size $N_{\theta}, N_A$ such that: $ \forall k,n \quad {M'}_{k,n} = n\sin(n\theta_k)/\sin(\theta_k)$ \\
+$A$ & vector of size $N_A$ containing all the $A_n$ \\
+$\alpha(y) \text{ or } \alpha(\theta)$ & span-wise angle of attack distribution\\
+$\alpha_i(y) \text{ or } \alpha_i(\theta)$ & span-wise lift-induced angle of attack distribution\\
+$c(y) \text{ or } c(\theta)$ & span-wise chord distribution\\
+$c_l(y) \text{ or } c_l(\theta)$ & span-wise lift coefficient distribution\\
+$c_d(y) \text{ or } c_d(\theta)$ & span-wise drag coefficient distribution\\
+$V$ & airspeed \\
+$\cldat \text{ and } \cddat $ & fit of 2D airfoil data \\
+$Re$ & Reynolds number \\
+$y_k, \theta_k, \alpha_k, \alpha_{i_k}, c_k, c_{l_k}$ &  $y, \theta, \alpha, \alpha_i, c, c_{l}$ at the kth span section\\
+\end{longtable}}
+
+
+\section{Introduction}
+
+This code aims at optimizing the wing planform and airspeed of a glider of a given weight W and fixed airfoil section for maximum $L/D$.
+2D wind tunnel data of the airfoil is available, {\it i.e.} the function
+% $\cldat(\alpha, Re)$ and 
+$\cddat(c_l, Re)$ are provided for  $c_l \in [\cl{lb}, \cl{ub}]$   and $Re \in [{Re}_{\bf lb}, {Re}_{\bf ub}]$.
+
+Schematically, the optimization problem reads:
+\begin{align*}
+	& \underset{V, b, c(y), c_l(y)}{\text{minimize}} &  C_D &/ C_L  & \\
+	& \text{subject to} 
+	&  {C_L}^2 + {C_D}^2 &= {C_W}^2 \quad \text{-} \quad \text{\it gliding flight constraint} \\
+	& & \cl{lb} \leq &\cl \leq \cl{ub} \quad \text{-} \quad \text{\it domain constraint for } \cddat  \\
+	& & {Re}_{\bf lb} \leq &{Re} \leq {Re}_{\bf ub} \quad \text{-} \quad \text{\it domain constraint for } \cddat
+\end{align*}
+
+First, the optimization problem is described in more details. 
+Second, some insights are obtained from considering simple functions for $\cddat$.
+Finally, using a neural network fit of 2d airfoil data, the complete problem is solved and results are analysed.
+
+
+\section{Optimization Problem}
+
+\paragraph{Loss Function:}Using the gliding flight constraint, we have:
+$$ \frac{{C_L}^2}{{C_D}^2} = \frac{{C_W}^2 - {C_D}^2}{{C_D}^2} = \frac{{C_W}^2}{{C_D}^2} - 1$$
+Therefore, minimizing $C_{D} / C_W$  is equivalent to minimizing $C_{D} / C_L$.
+Moreover, $C_D$ can be decomposed into lift-induced drag and parasite drag:
+$$C_D = \CDp + \CDi$$
+
+\paragraph{Remapping the spanwise coordinate:} The spanwise coordinate $y \in [\frac {-b} 2, \frac b 2]$ can be remapped into $\theta \in [\pi, 0]$, such that:
+$$y = \frac b 2 \cos\theta$$
+
+\paragraph{Parasite Drag :}Since we can compute the 2D parasite drag using $\cddat$, the total $\CDp$ is obtained with integration.
+\begin{align*}
+	\CDp &= \frac 1 S \int_{-b/2}^{b/2} c(y) \cddat(c_l(y), Re(y)) dy\\
+	&= \frac b {2S} \int_{0}^{\pi} c(\theta) \cddat(c_l(\theta), Re(\theta)) \sin(\theta) d\theta\\
+	&= \frac b {2S} \sum_{k=0}^{N_y} w_k c_k \cdp{k}
+\end{align*}
+where $N_y$ is the number of spanwise panels, $\theta_{1,\dots, N_y}$ their location, 
+and $w_{1,\dots, N_y}$ a set of quadrature weights that depend on the spacing and location of the panels. We also wrote:
+$$c(\theta_k) = c_k \quad \text{and} \quad \cddat(c_l(\theta_k), Re(\theta)k)) = \cdp{k}$$
+In the rest of this document, we almost always describe the chord distribution with the non-dimensional elements $c_k/b$, that we write $\cb{k}$. In the expression of $\CDp$, this gives:
+$$\CDp = \frac {\AR} {2} \sum_{k=0}^{N_y} w_k \cb{k} \cdp{k}$$
+
+\paragraph{Induced Drag:}We use a far field estimate of the induced drag. 
+Assuming a planar wake, we use a sine basis expansion of the vortex sheet strength:
+$$\Gamma(\theta) = 2bV \sum_{n=1}^{N_a} A_n sin(n \theta)$$
+$N_a$ is the order of this expansion.
+This gives us:
+$$\CDi = \pi \AR \sum_{n=1}^{N_a} n A_n^2$$
+
+\paragraph{Weight Coefficient:}Factorizing by $\AR$, we write the weight coefficient as: 
+$$C_W = \frac{W}{1/2 \rho V^2 S} = \frac{W}{1/2 \rho }\AR (Vb)^{-2} $$
+In this study, $\rho$ is assumed to be constant, and will be dropped from the objective function below.
+
+\paragraph{Objective Function:}Putting together all of the above, we obtain the following objective function:
+$$\frac{C_D}{C_W} = (Vb)^2\left( \pi \sum_{n=1}^{N_a} n A_n^2 +   \frac {1} {2} \sum_{k=0}^{N_y} w_k \cb{k} \cdp{k} \right)$$
+
+\paragraph{Approximate Handling of the Equality Constraint:} We simplify the problem by assuming that the glide angle $\gamma$ is small.
+In such case,
+\begin{align}
+	C_W = \frac{C_L}{\cos \gamma} \approx C_L = \pi \AR A_1
+	\label{eq:A1}
+\end{align}
+The validity of the small angle assumption is discussed in appendix \ref{apx:smallangle}.
+Instead of solving the original nonlinear constrained problem, we insert the value of $A_1$
+ into the objective function. $\pi \AR A_1^2$ appears in the expression of $\CDi$, so we get: 
+ \begin{align*}
+	\CDi &= \pi \AR A_1^2 + \pi \AR \sum_{n=2}^{N_a} n A_n^2\\
+		&=  \frac{\AR}{\pi} \left(\frac{C_W}{\AR} \right)^2 + \pi \AR \sum_{n=2}^{N_a} n A_n^2\\
+		&=  \frac{4W^2}{\rho^2 \pi} \AR (Vb)^{-4} + \pi \AR \sum_{n=2}^{N_a} n A_n^2
+ \end{align*}
+
+\paragraph{Inequality Constraints:} We can write the Reynold's number and the lift coefficient $\cl{k}$ at the local section k as a function of other variables used previously:
+$$
+	\cl{k} = 4 \cb{k}^{-1} \sum_{n=1}^{N_a} A_n \sin(n \theta_k)
+	 = 4 \cb{k}^{-1} \left(A_1 \sin(\theta_k) + \sum_{n=2}^{N_a} A_n \sin(n \theta_k) \right)
+$$
+
+\noindent Therefore:
+$$\cl{k} = 4 \cb{k}^{-1} \left(\frac{W}{1/2 \rho \pi} (Vb)^{-2} \sin(\theta_k) + \sum_{n=2}^{N_a} A_n \sin(n \theta_k) \right) $$
+
+\noindent Also:
+$$Re_{k} = \frac{\rho}{\nu}\cb{k}\sqrt{(Vb)^2} $$
+
+
+The collected optimization problem is written and analyzed in the next section.
+
+\section{Optimization Problem Insights and Discussion}
+
+Putting together all of the last section we have:
+
+\begin{align*}
+	& \underset{(Vb)^2, \cb{1:N_y}, A_{2:N_a}}{\text{minimize}}  &
+	\frac{4W^2}{\rho^2 \pi} (Vb)^{-2} + &
+	(Vb)^2\left( 
+	\pi \sum_{n=2}^{N_a} n A_n^2 +  
+	\frac {1} {2} \sum_{k=0}^{N_y} w_k \cb{k} \cddat(\cl{k}, Re_k) \right) & \\
+	& \text{subject to} & \cl{lb} \leq &\cl \leq \cl{ub} \\
+	& & {Re}_{\bf lb} \leq &{Re} \leq {Re}_{\bf ub}
+\end{align*}
+with:
+\begin{align*}
+	& \cl{k} = 4 \cb{k}^{-1} \left(\frac{W}{1/2 \rho \pi} (Vb)^{-2} \sin(\theta_k) + \sum_{n=2}^{N_a} A_n \sin(n \theta_k) \right) \\
+	& Re_{k} = \frac{\rho}{\nu}\cb{k}\sqrt{(Vb)^2} 
+\end{align*}
+
+
+% \begin{align*}
+% 	& \underset{(Vb)^2, \cb{1:N_y}, A_{2:N_a}}{\text{minimize}}  &
+% 	\frac{4W^2}{\rho^2 \pi} (Vb)^{-2} + &
+% 	(Vb)^2\left( 
+% 	\pi \sum_{n=2}^{N_a} n A_n^2 +  
+% 	\frac {1} {2} \sum_{k=0}^{N_y} w_k \cb{k} \cdp{k} \right) & \\
+% 	& \text{subject to} & \cl{lb}/4 \leq & \cb{k}^{-1} \sum_{n=1}^{N_y} A_n \sin(n \theta_k) \leq \cl{ub}/4 \\
+% 	& & \frac{\nu}{\rho} {Re}_{\bf lb} \leq & \cb{k}\sqrt{(Vb)^2}  \leq \frac{\nu}{\rho} {Re}_{\bf ub}
+% \end{align*}
+% with:
+% \begin{align*}
+% 	& \cdp{k} = \cddat(\cl{k}, Re_k) \\
+% 	& \cl{k} = 4 \cb{k}^{-1} \sum_{n=0}^{N_y} A_n \sin(n \theta_k) \\
+% 	& Re_{k} = \frac{\rho}{\nu}\cb{k}\sqrt{(Vb)^2} 
+% \end{align*}
+
+\paragraph{Design Variables:} The first interesting note is that the optimization of the planform and airspeed only requires:
+\begin{itemize}
+	\item $(Vb)^2$ which is the only place where the airspeed appears. Note that we could equivalently use $C_W / \AR$, which makes it obvious that this design variable is tightly connected to the nominal $C_L$.
+	\item $\cb{1:N_y}$ is simply related to the planform shape
+	\item $A_{1:N_a}$ describes the lift distribution. Note that $A_1$ is not a design variable, it is directly set by the value of $C_W / \AR$ (see equation \ref{eq:A1}).
+\end{itemize}
+Once the optimization has converged, choosing either a span value $b$, an airspeed $V$, or the chord $c_k$ of any of the chord sections allows to recover the full dimensional planform shape.
+
+\paragraph{Origin of each term:}In the objective function, we can connect all of the terms with their physical origin:
+$$
+\underbrace{\frac{4W^2}{\rho^2 \pi} (Vb)^{-2}}_{(1)} + 
+\underbrace{(Vb)^2}_{\text{division by $C_W$}}
+\left( 
+\underbrace{\pi \sum_{n=2}^{N_a} n A_n^2}_{(2)} +  
+\underbrace{
+\frac {1} {2} \sum_{k=0}^{N_y} w_k \cb{k} \cddat(\cl{k}, Re_k)}_{\text{parasite drag}} \right)$$
+$(1)$ and $(2)$ are the two parts of the induced drag, divided by $C_W$:
+\begin{itemize}
+\item $(1)$ comes from the induced drag of an elliptically loaded wing. In essence, it is proportional to $C_L / (\pi \AR)$.
+\item $(2)$ is the sum of all additional terms due to the non elliptical loading.
+\end{itemize}
+
+The rest of this section develops some insights for this problem.
+
+\section{Insights For Individual Design Variable}
+
+\subsection{$(Vb)^2$}
+
+Fixing all other design variables, the optimization problem from $(Vb)^2$ looks like the following:
+\begin{align*}
+	& \underset{(Vb)^2}{\text{minimize}}  &
+	\frac{k_1}{(Vb)^{2}} &+ (Vb)^2 k_2  \\
+	& \text{subject to} & lb_1 \leq & 1 / (Vb)^2 + k_3 \leq ub_1 \\
+	& & lb_2 \leq & \sqrt{(Vb)^2} \leq ub_2
+\end{align*}
+where $k_1$, $k_2$ and $k_3$ are constant positive numbers.
+%
+The landscape for this function is shown on figure \ref{fig:Vb2img}
+
+\begin{figure}[h]
+	\centering
+	\caption{Optimization landscape for $(Vb)^2$}
+	\label{fig:Vb2img}
+\end{figure}
+
+\subsection{$\cb{1:N_y}$}
+
+Fixing all other design variables, the optimization problem from $\cb{1:N_y}$ looks like the following:
+\begin{align*}
+	& \underset{\cb{1:N_y}}{\text{minimize}}  &
+	\sum_{k=1}^{N_y} &k_i \cb{k} \cddat{\cb{k}}  \\
+	& \text{subject to} & lb \leq & \cb{k} \leq ub
+\end{align*}
+where $k_{0:N_y}$ are constant positive numbers, 
+and ($lb$, $ub$) are bounds derived from the $c_l$ and $Re$ bounds.
+
+Very clearly, unless $\cddat$ varies with $\cb{k}^{-1}$ to a power bigger than one,
+the optimizer will always set each $\cb{k}$ to its lowest bound 
+(from the $Re$ or from $c_l$, whichever is tightest).
+Interestingly, if the airfoil is a flat plate, then:
+$$\cddat(Re) \approx 2 \frac{0.074}{Re^{0.2}}$$
+With only a power 0.2 on $\cb{k}^{-1}$, this is not a big enough penalty on small chords to prevent the maximum L/D to happen at the lowest possible chord.
+
+\subsection{$A_{1:N_a}$}
+
+Fixing all other design variables, the optimization problem from $A_{2:N_a}$ looks like the following:
+\begin{align*}
+	& \underset{A_{2:N_a}}{\text{minimize}}  &
+	 \sum_{n=2}^{N_a} nA_n^2   &+  \sum_{k=0}^{N_y} k_i \cddat(\sum_{n=2}^{N_a} A_n sin(n \theta_k))\\
+	& \text{subject to} & lb_k \leq & \sum_{n=2}^{N_a} A_n sin(n \theta_k) \leq ub_k
+\end{align*}
+where ($lb_k \leq 0$) and ($ub_k \geq 0$) are bounds derived from the $c_l$ bounds.
+Pretty clearly, the main incentive is to set all of the 
+
+\section{Confirming the Insight on Simplified 2D Sections}
+\subsection{Constant $\cddat$}
+
+Let's assume:
+$$\cddat(\cl, Re) = \cdp \quad - \quad \text{\it (constant)}$$
+Then the optimization problem becomes:
+
+\begin{align*}
+	& \underset{(Vb)^2, \cb{1:N_y}, A_{2:N_a}}{\text{minimize}}  &
+	\frac{4W^2}{\rho^2 \pi} (Vb)^{-2} + &
+	(Vb)^2\left( 
+	\pi \sum_{n=2}^{N_a} n A_n^2 +  
+	\frac {\AR} {2} \right) & \\
+	& \text{subject to} & \cl{lb} \leq &\cl \leq \cl{ub} \\
+	& & {Re}_{\bf lb} \leq &{Re} \leq {Re}_{\bf ub}
+\end{align*}
+with:
+\begin{align*}
+	 \cl{k} &= 4 \cb{k}^{-1} \sum_{n=1}^{N_y} A_n \sin(n \theta_k)   \\
+	 &= 4 \cb{k}^{-1}\left(\sum_{n=1}^{N_y} A_n \sin(n \theta_k) \sum_{n=2}^{N_y} A_n \sin(n \theta_k) \right)\\
+	 Re_{k} &= \frac{\rho}{\nu}\cb{k}\sqrt{(Vb)^2} 
+\end{align*}
+
+
+\subsection{Flat Plate Model}
+\subsection{Flat Plate with Exponential $C_L$ Penalty}
+
+\appendix
+
+\section{Validity of the small angle assumptions}
+\label{apx:smallangle}
+TBD
+
+\end{document}
+
+

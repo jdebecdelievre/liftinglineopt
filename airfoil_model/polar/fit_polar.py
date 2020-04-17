@@ -22,7 +22,14 @@ def build_model(hidden_layers):
     for i in range(len(hidden_layers)-1):
         layers += [nn.Linear(hidden_layers[i], hidden_layers[i+1]),
         nn.Sigmoid()]
-    return  nn.Sequential(*layers, nn.Linear(hidden_layers[-1], 1))
+    model = nn.Sequential(*layers, nn.Linear(hidden_layers[-1], 1))
+    
+    model.input_mean = nn.Parameter(torch.zeros(2) ,requires_grad=False)
+    model.input_std = nn.Parameter(torch.zeros(2) ,requires_grad=False)
+    model.output_mean = nn.Parameter(torch.zeros(1) ,requires_grad=False)
+    model.output_std = nn.Parameter(torch.zeros(1) ,requires_grad=False)
+
+    return model
 
 def load_data(filename, params):
     data = pd.read_csv(filename)
@@ -61,7 +68,8 @@ def main(model_restart, filename_suffix, lr, hidden_layers, epochs):
             hidden_layers = [8],
             epochs = 100000,
             batch_size = 500,
-            lr=1e-3
+            lr=1e-3,
+            weight_decay=0.01
         )
     if lr:
         params['lr'] = lr
@@ -77,12 +85,18 @@ def main(model_restart, filename_suffix, lr, hidden_layers, epochs):
 
     # Build model
     model = build_model(params["hidden_layers"])
+
+    model.input_mean.data = inp_mean
+    model.input_std.data = inp_std
+    model.output_mean.data = out_mean
+    model.output_std.data = out_std
+
     if model_restart:
         model.load_state_dict(torch.load(op.join("models", model_restart + ".mdl")))
 
     opt = torch.optim.Adam(model.parameters(),
                         lr=params['lr'],
-                        weight_decay=0.001,
+                        weight_decay=params['weight_decay'],
                         betas=(0.9, 0.999), 
                         eps=1e-08
     )

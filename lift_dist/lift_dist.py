@@ -11,6 +11,8 @@ import cvxpy as cp
 from pyoptsparse import Optimization, OPT
 from collections import OrderedDict, namedtuple
 import os
+import warnings
+import pdb
 
 rho = 1.225
 pi = np.pi
@@ -141,10 +143,11 @@ class BaseLiftDist():
 
     def addCon(self, optProb, constraint, x0):
         f0 = self.objective(x0, [constraint])
-        optProb.addConGroup(constraint["name"], f0[constraint["name"]].shape[0],
-        lower=constraint['lb'],
-        upper=constraint["ub"]
-        )
+        if constraint["name"] in f0:
+            optProb.addConGroup(constraint["name"], f0[constraint["name"]].shape[0],
+            lower=constraint['lb'],
+            upper=constraint["ub"]
+            )
         return optProb
 
     def optimize(self, x0=None, alg='IPOPT', restarts=1, 
@@ -223,6 +226,7 @@ class BaseLiftDist():
         with open(filename, 'a') as f:
             print(best_sol, file=f)
         D = best_sol.getDVs()
+        print(best_sol)
         return D, best_sol
 
     def initial_guess(self, dict_var=None, dic=True):
@@ -368,7 +372,7 @@ class LiftDistVb(BaseLiftDist):
                     "ReCon": self.Re(xdict["Vb2"], xdict["c_2b"])
                 })
             else:
-                raise ValueError(f"{key} is not a valid constraint")
+                warnings.warn(f"{key} is not a valid constraint")
         return funcs
 
     def alpha_i(self, A1, A):
@@ -525,7 +529,7 @@ class LiftDistND(BaseLiftDist):
                     "chordVar": xdict['c_b'][1:] - xdict["c_b"][:-1]
                 })
             else:
-                raise ValueError(f"{con['name']} is not a valid constraint")
+                warnings.warn(f"{con['name']} is not a valid constraint")
         return funcs
 
     def addCon(self, optProb, constraint, x0):
@@ -573,7 +577,8 @@ class LiftDistND(BaseLiftDist):
                                 )
         elif constraint['name'] == 'chordVar':
             jac=self.gradient(x0, [constraint])['chordVar']
-            del jac['A']
+            if "A" in jac:
+                del jac['A']
             del jac['Cw_AR']
             optProb.addConGroup('chordVar', f0['chordVar'].shape[0],
                                 lower=constraint['lb'],
@@ -624,72 +629,78 @@ class SpecifiedLiftDist(LiftDistND):
             self.A = A
 
 
-    # def objective(self, xdict, constraints=[]):
-    #     A1 = self.A1(xdict["Cw_AR"])
-    #     # cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], self.A, A1)
-    #     xdict["A"] = self.A
-    #     funcs = super().objective(xdict, constraints=constraints)
-    #     AR = 1/self._AR(xdict['c_b'])
-    #     CL = xdict["Cw_AR"] * AR
-    #     Re = self.Re(xdict["Cw_AR"], xdict["c_b"][0])
-    #     funcs["obj"]=\
-    #         (CL**2/pi/AR / (1 + pi**2/6) + self.cd0_val(CL, Re))/CL
-    #         # (CL**2/pi/AR + AR * self.w_th @ (cd0 * xdict["c_b"]))/CL
-    #     return funcs
-
     def objective(self, xdict, constraints=[]):
+        A1 = self.A1(xdict["Cw_AR"])
+        cd0 = self.CD0_2D(xdict["Cw_AR"], xdict["c_b"], self.A, A1)
+        xdict["A"] = self.A
+        funcs = super().objective(xdict, constraints=constraints)
         AR = 1/self._AR(xdict['c_b'])
         CL = xdict["Cw_AR"] * AR
-
-        cd0 = self.CD0_2D(CL, AR)
-
-        funcs = {"obj":
-                    (cd0 + CL**2 / AR / pi / (1 + pi**2/6))/CL
-                }
-        for con in constraints:
-            if con['name'] == "ReCon":
-                funcs.update({
-                    "ReCon": (self.Re(CL, AR) - con['lb'])/(con['ub'] - con['lb'])
-                })
-            else:
-                raise ValueError(f"{con['name']} is not a valid constraint")
+        Re = self.Re(xdict["Cw_AR"], xdict["c_b"][0])
+        # import pdb; pdb.set_trace()
+        funcs["obj"]=\
+            (pi * AR * A1**2 * (1  + self.Nn @ self.A**2) + AR * self.w_th @ (cd0 * xdict["c_b"]))/CL
+            # (CL**2/pi/AR * (1 + pi**2/6) + AR * self.w_th @ (cd0 * xdict["c_b"]))/CL
+            # (CL**2/pi/AR * (1 + pi**2/6) + self.cd0_val(CL, Re))/CL
         return funcs
 
+    # def objective(self, xdict, constraints=[]):
+    #     AR = 1/self._AR(xdict['c_b'])
+    #     CL = xdict["Cw_AR"] * AR
 
-    # def metrics(self, xdict):
-    #     xdict["A"] = self.A
-    #     return super().metrics(xdict)
+    #     cd0 = self.CD0_2D(CL, AR)
+
+    #     funcs = {"obj":
+    #                 (cd0 + CL**2 / AR / pi / (1 + pi**2/6))/CL
+    #             }
+    #     for con in constraints:
+    #         if con['name'] == "ReCon":
+    #             funcs.update({
+    #                 "ReCon": (self.Re(CL, AR) - con['lb'])/(con['ub'] - con['lb'])
+    #             })
+    #         elif con['name'] == "chordVar":
+    #             funcs.update({
+    #                 "chordVar": xdict['c_b'][1:] - xdict["c_b"][:-1]
+    #             })
+    #         else:
+    #             warnings.warn(f"{con['name']} is not a valid constraint")
+    #     return funcs
+
 
     def metrics(self, xdict):
-        AR = 1/self._AR(xdict['c_b'])
-        CL = xdict["Cw_AR"] * AR
-        c = np.ones(1)
+        xdict["A"] = self.A
+        return super().metrics(xdict)
 
-        Re = self.Re(CL, AR)
-        re = c * Re
+    # def metrics(self, xdict):
+    #     AR = 1/self._AR(xdict['c_b'])
+    #     CL = xdict["Cw_AR"] * AR
+    #     c = np.ones(1)
 
-        cl = CL * c
+    #     Re = self.Re(CL, AR)
+    #     re = c * Re
 
-        cdp = self.CD0_2D(CL, AR)
-        CDp = cdp
+    #     cl = CL * c
 
-        alpha_i = CL / AR/pi
-        _eps = (1 + pi**2/6)
-        CDi = CL**2 / AR / pi * _eps
+    #     cdp = self.CD0_2D(CL, AR)
+    #     CDp = cdp
 
-        L_D = CL / (CDp + CDi)
+    #     alpha_i = CL / AR/pi
+    #     _eps = (1 + pi**2/6)
+    #     CDi = CL**2 / AR / pi * _eps
 
-        return c, AR, re, Re, cl, CL, cdp, CDp, alpha_i, CDi, L_D
+    #     L_D = CL / (CDp + CDi)
 
-    def CD0_2D(self, CL, AR):
-        Re = self.Re(CL, AR)
-        return self.cd0_val(CL, Re)
+    #     return c, AR, re, Re, cl, CL, cdp, CDp, alpha_i, CDi, L_D
+
+    # def CD0_2D(self, CL, AR):
+    #     Re = self.Re(CL, AR)
+    #     return self.cd0_val(CL, Re)
     
-    def Re(self, CL, AR):
-        return (1 / 2 * rho / self.W * CL/AR)**(-0.5) * rho/ nu / AR 
+    # def Re(self, CL, AR):
+    #     return (1 / 2 * rho / self.W * CL/AR)**(-0.5) * rho/ nu / AR 
 
 class SimpleLiftDist(BaseLiftDist):
-    def __init__(self, W,
+    def __init__(self, W, Ny,
                 cd0_model = "flat_plate",
                 cd0_val=0.001,
                 cl_model = "flat_plate",
@@ -707,14 +718,14 @@ class SimpleLiftDist(BaseLiftDist):
                         scale = 1.,
                         offset = 0.
                     ),
-            "_AR" : Variable(
-                        name = "_AR",
+            "AR" : Variable(
+                        name = "AR",
                         size = 1,
                         dflt = 10.,
                         ub = 300.,
                         lb = 0.,
                         index = (1,2),
-                        scale = 1.,
+                        scale = .1,
                         offset = 0.
                     )
         })
@@ -722,50 +733,61 @@ class SimpleLiftDist(BaseLiftDist):
         super().__init__(
                 variables = variables,
                 W = W,
-                Ny = 1, Na = 1,
+                Ny = Ny, Na = 1,
                 cd0_model = cd0_model,
                 cd0_val= cd0_val,
                 cl_model = cl_model,
                 bounds = bounds)
 
-        self.y_pts = np.array([0.,0.])
+        self.w_th, self.theta_pts, self.y_pts = quadrature_weights(2*Ny - 1)
+        self.M, self.M1, self.M_, self.M1_, self.Nn = even_sine_exp(self.theta_pts, Na=1)
+
+        # Only consider half of the chord
+        self.w_th = self.w_th[:Ny]
+        self.w_th[-1] /= 2
+        self.theta_pts = self.theta_pts[:Ny]
+        self.y_pts = self.y_pts[:Ny]
+        self.M1 = self.M1[:Ny]
 
     def Re(self, CL, AR):
         return (1 / 2 * rho / self.W * CL/AR)**(-0.5) * rho/ nu / AR 
+    
+    def cl(self, CL):
+        return 4 * CL * self.M1 / pi
 
     def metrics(self, xdict):
-        # AR = xdict["AR"]
-        # CL = xdict["CL"]
-        AR = 1/xdict["_AR"]
+        AR = xdict["AR"]
         CL = xdict["CL"]
-        c = np.ones(1)
+        # AR = 1/xdict["_AR"]
+        # CL = xdict["CL"]
+        c = np.ones(self.Ny)
 
         Re = self.Re(CL, AR)
         re = c * Re
 
-        cl = CL * c
+        cl = self.cl(CL)
 
         cdp = self.CD0_2D(CL, AR)
-        CDp = cdp
+        CDp = self.w_th @ cdp # constant chord
 
         alpha_i = CL / AR/pi
-        _eps = (1 + pi**2/6)
-        CDi = CL**2 / AR / pi * _eps
+        CDi = CL**2 / AR / pi
 
         L_D = CL / (CDp + CDi)
 
         return c, AR, re, Re, cl, CL, cdp, CDp, alpha_i, CDi, L_D
 
     def objective(self, xdict, constraints=[]):
-        # AR = xdict["AR"]
-        # CL = xdict["CL"]
-        AR = npj.atleast_1d(1/xdict["_AR"])
+        # AR = npj.atleast_1d(1/xdict["_AR"])
+        # CL = npj.atleast_1d(xdict["CL"])
+        AR = npj.atleast_1d(xdict["AR"])
         CL = npj.atleast_1d(xdict["CL"])
 
-        cd0 = self.CD0_2D(CL, AR)
+        cdp = self.CD0_2D(CL, AR)
+        CDp = self.w_th @ cdp # constant chord
 
         funcs = {"obj":
-                    (cd0 + CL**2 / AR / pi / (1 + pi**2/6))/CL
+                    (CDp + CL**2 / AR / pi)/CL
                 }
         for con in constraints:
             if con['name'] == "ReCon":
@@ -773,14 +795,14 @@ class SimpleLiftDist(BaseLiftDist):
                     "ReCon": (self.Re(CL, AR) - con['lb'])/(con['ub'] - con['lb'])
                 })
             else:
-                raise ValueError(f"{con['name']} is not a valid constraint")
+                warnings.warn(f"{con['name']} is not a valid constraint")
         return funcs
 
     def addCon(self, optProb, constraint, x0):
-        # x0['CL'] = np.atleast_1d(x0['CL'])
-        # x0['AR'] = np.atleast_1d(x0['AR'])
-        AR = npj.atleast_1d(1/x0["_AR"])
-        CL = npj.atleast_1d(x0["CL"])
+        x0['CL'] = np.atleast_1d(x0['CL'])
+        x0['AR'] = np.atleast_1d(x0['AR'])
+        # AR = npj.atleast_1d(1/x0["_AR"])
+        # CL = npj.atleast_1d(x0["CL"])
 
         f0 = self.objective(x0, [constraint])
         if constraint['name'] == "ReCon":
@@ -801,8 +823,9 @@ class SimpleLiftDist(BaseLiftDist):
             pass
             # return self.cd0_val
         elif self.cd0_model == 'function':
-            Re = self.Re(CL, AR)
-            return self.cd0_val(CL, Re)
+            cl = self.cl(CL)
+            re = self.Re(CL, AR) * npj.ones_like(cl)
+            return self.cd0_val(cl, re)
         else:
             raise NotImplementedError
 
