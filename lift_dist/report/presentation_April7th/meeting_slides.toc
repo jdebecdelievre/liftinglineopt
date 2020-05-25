@@ -1,2 +1,0 @@
-\beamer@sectionintoc {1}{Optimization Problem}{3}{0}{1}
-\beamer@sectionintoc {2}{Sweep on W}{5}{0}{2}

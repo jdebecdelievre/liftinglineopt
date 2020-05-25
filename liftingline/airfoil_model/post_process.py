@@ -10,9 +10,8 @@ import os
 op = os.path
 import torch
 import json
-# from abq.train_airfoil import build_model, load_data
-from polar.fit_polar import build_model as build_model_pol
-from polar.fit_polar import load_data as load_data_pol
+from airfoil_model.fit_abq import build_model_abq, load_data_abq
+from airfoil_model.fit_polar import build_model_pol, load_data_pol
 
 
 def export_weights(model, filename):
@@ -20,17 +19,17 @@ def export_weights(model, filename):
     np.save(filename, sd)
     return sd
 
-def load_model(model_name, model_type):
+def load_model(model_path, model_type):
     if model_type == 'abq':
-        with open(op.join("abq/models", model_name+'.json'), "r") as f:
+        with open(op.join(model_path+'.json'), "r") as f:
             params = json.load(f)
-        model = build_model(params["hidden_layers"])
-        model.load_state_dict(torch.load(op.join("abq/models", model_name + ".mdl")))
+        model = build_model_abq(params["hidden_layers"])
+        model.load_state_dict(torch.load(op.join(model_path + ".mdl")))
     elif model_type == 'polar':
-        with open(op.join("polar/models", model_name+'.json'), "r") as f:
+        with open(op.join(model_path+'.json'), "r") as f:
             params = json.load(f)
         model = build_model_pol(params["hidden_layers"])
-        model.load_state_dict(torch.load(op.join("polar/models", model_name + ".mdl")))
+        model.load_state_dict(torch.load(op.join(model_path + ".mdl")))
     else:
         raise NotImplementedError(f'No model type {model_type}')
     return model, params
@@ -38,7 +37,7 @@ def load_model(model_name, model_type):
 def sigmoid(x):
     return 0.5 * (npj.tanh(x / 2) + 1)
 
-def get_model(model_name, model_type):
+def get_model(model_path, model_type):
     """
     Returns a python function that evaluates to the same value as the pytorch neural network
 
@@ -49,7 +48,7 @@ def get_model(model_name, model_type):
     /!\ input order obviously matters
 
     """
-    torchmodel, params = load_model(model_name, model_type)
+    torchmodel, params = load_model(model_path, model_type)
     input_mean = torchmodel.input_mean.numpy()
     input_std = torchmodel.input_std.numpy()
     output_mean = torchmodel.output_mean.numpy()
@@ -67,7 +66,7 @@ def get_model(model_name, model_type):
                 z = sigmoid(z)
             else:
                 raise NotImplementedError(f'Numpy extraction not support for layer {type(layer)}')
-        return z * output_std + output_mean
+        return (z * output_std + output_mean).squeeze()
 
     return model
 
@@ -189,7 +188,7 @@ def plot_available_data(dat, ycol, ycolname=None,
     if colorbar:
         if adapt_ticks:
             keep_tick = np.ones_like(c) == 1
-            keep_tick[1:] = np.diff(c)/c[1:] > 0.05
+            keep_tick[1:] = np.diff(c)/c[1:] > 0.01
             tks = c[keep_tick]
         else:
             tks = None

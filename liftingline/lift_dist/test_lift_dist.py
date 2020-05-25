@@ -1,4 +1,7 @@
-from lift_dist import *
+from liftingline.lift_dist.lift_dist import *
+import numpy as np
+from liftingline.lift_dist import WLiftDist, Trap_WLiftDist
+
 
 def test_get_var():
     LLopt = LiftDistVb(1, Na=5, Ny=11, cd0_model='constant',cl_model='flat_plate')
@@ -185,6 +188,69 @@ def test_bounds():
     assert np.allclose(Re, 100000, atol=00, rtol=0.25), f"Re is not at its min: {Re}"
     assert np.allclose(cl[1:], 0.1, atol=0, rtol=.2), f"cl is not at its min: {cl[1:]}"
 
+
+def test_metrics(A, C, W=2, Ny=11):
+    Nc = C.shape[0]
+    Na = A.shape[0]
+
+    
+    LD = [ WLiftDist(W=W, Ny=Ny, Na=Na, cd0_model='flat_plate'),
+            LiftDistND(W=W, Ny=Ny, Na=Na, cd0_model='flat_plate'),
+            FreeChordLiftDist(W=W, Ny=Ny, Na=Na, cd0_model='flat_plate'),
+            # LiftDistVb(W=W, Ny=Ny, Na=Na, cd0_model='flat_plate'),
+            SpecifiedLiftDist(W=W, Ny=Ny, Na=Na, A=A, cd0_model='flat_plate'),
+            ChebChordLiftDist(W=W, Ny=Ny, Nc=Nc, Na=Na, cd0_model='flat_plate')]
+    
+    CL = 0.8
+    AR = 12
+    c = LD[-1].c(C, AR)
+
+    if np.allclose(c, 1):
+        LD.append(RectangularWingLiftDist(W=W, Ny=Ny, Na=Na, cd0_model='flat_plate'))
+    
+    if np.allclose(A, 0):
+            LD.append(
+            SimpleLiftDist(W=W, Ny=Ny, cd0_model='flat_plate'))
+    
+    c_b  = c / AR
+    Vb2 = AR/CL/(1/2*rho)
+    b = 1.2
+    xdict = [
+        dict(CL=CL, c_b=c_b, A=A, b=b),
+        dict(Cw_AR=CL/AR, c_b=c_b, A=A),
+        # dict(Vb2=Vb2, c_2b=c_b/2, A=A),
+        dict(CL=CL, AR=AR, A=A, c=c),
+        dict(Cw_AR=CL/AR, c_b=c_b),
+        dict(CL=CL, AR=AR, A=A, C=C),
+        dict(CL=CL, AR=AR, A=A),
+        dict(CL=CL, AR=AR)
+    ]
+
+
+    def get(i, M):
+        return np.vstack([m[i] for m in M])
+
+    # Set weight to the one computed with weight model
+    m0 = LD[0].metrics(xdict[0])
+    for ld in LD[1:]:
+        ld.W = m0[-1]
+
+    # Compare metrics
+    metrics = [m0] + [ld.metrics(x) for ld, x in zip(LD, xdict)]
+
+    stacked_metrics = [get(i, metrics) for i in range(len(metrics[0]))]
+
+    for i in range(len(stacked_metrics)):
+        si = stacked_metrics[i]
+        for j in range(si.shape[0]):
+            assert np.allclose(si[j], si[0], rtol=1e-3, atol=1e-3), \
+                f'Metric number {i} not matching for LD number {j}: {si[j]} vs {si[0]}'
+
+    # Compare objectives
+    obj = [ld.objective(x)['obj'] for ld, x in zip(LD[1:], xdict[1:])]
+    for i in range(len(obj)):
+        assert np.isclose(obj[i], obj[0]), f'Objective not matching for LD number {i}: {obj[i]} versus {obj[0]}'
+
 if __name__ == "__main__":
     # test_get_var()
     # test_ellipse_Vb()
@@ -192,3 +258,19 @@ if __name__ == "__main__":
     # test_GP()
     # test_ellipse_ND()
     # test_bounds()
+
+    # test metrics
+    Nc = 5
+    Na = 4
+    W = 2
+
+    # Elliptic loading, fixed chord
+    test_metrics(A=np.zeros(Na), C=np.zeros(Nc), W=2)
+
+    # Random loading, constant chord
+    A = np.random.uniform(-1.,1.,size=Na)
+    test_metrics(A=A, C=np.zeros(Nc), W=2)
+
+    # Random loading, random chord
+    C = np.random.uniform(-.1, .1, size=Nc)
+    test_metrics(A=A, C=C, W=2)

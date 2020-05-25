@@ -18,55 +18,64 @@ def build_model(hidden_layers):
     layers = [
     nn.Linear(2, hidden_layers[0]),
     nn.Sigmoid()
+    # nn.LogSigmoid
     ] 
     for i in range(len(hidden_layers)-1):
         layers += [nn.Linear(hidden_layers[i], hidden_layers[i+1]),
-        nn.Sigmoid()]
-    return  nn.Sequential(*layers, nn.Linear(hidden_layers[-1], 3))
+        nn.Sigmoid()
+        # nn.LogSigmoid
+        ]
+    model = nn.Sequential(*layers, nn.Linear(hidden_layers[-1], 1))
+    
+    model.input_mean = nn.Parameter(torch.zeros(2) ,requires_grad=False)
+    model.input_std = nn.Parameter(torch.zeros(2) ,requires_grad=False)
+    model.output_mean = nn.Parameter(torch.zeros(1) ,requires_grad=False)
+    model.output_std = nn.Parameter(torch.zeros(1) ,requires_grad=False)
+
+    return model
 
 def load_data(filename, params):
     data = pd.read_csv(filename)
-    data["has_cd"] = 0
-    data["has_cm"] = 0
-    data["has_cl"] = 1
-    # data.loc[np.isnan(data.Cd), "has_cm"] = 1
-    # data.loc[np.isnan(data.Cm), "has_cd"] = 1
-    data = data.fillna(0)
+    data = data.loc[np.isnan(data.Cm)]
 
-    inp = torch.tensor(data[["alpha", "Re"]].values)
-    out = torch.tensor(data[["Cl", "Cd", "Cm"]].values)
+    inp = torch.tensor(data[["Cl", "Re"]].values)
+    out = torch.tensor(data[["Cd"]].values)
     inp_mean = inp.mean(0)
     out_mean = out.mean(0)
     inp_std = inp.std(0)
     out_std = out.std(0)
-    msk = torch.tensor(data[["has_cl","has_cd", "has_cm"]].values)
     inp = (inp-inp_mean)/inp_std
     out = (out-out_mean)/out_std
 
 
-    dataset = TensorDataset(inp, out, msk)
+    dataset = TensorDataset(inp, out)
     loader = DataLoader(dataset, 
                         batch_size=params['batch_size'], 
                         shuffle=False)
     
-    return loader, dataset, inp, out, msk, inp_mean, out_mean, inp_std, out_std, data
+    return loader, dataset, inp, out, inp_mean, out_mean, inp_std, out_std, data
+
+build_model_pol = build_model
+load_data_pol = load_data
 
 @click.command()
 @click.option('-m','--model_restart', default=None, help='restart from model')
 @click.option('-lr','--lr', default=None,  help='learning rate', type=click.FLOAT)
+@click.option('-fs','--filename_suffix', default=None,  help='filename_suffix for model', type=click.STRING)
 @click.option('-hl','--hidden_layers', default=None, help='hidden layers', type=click.STRING)
 @click.option('-e','--epochs', default=None, help='number of epochs', type=click.INT)
-def main(model_restart, lr, hidden_layers, epochs):
+def main(model_restart, filename_suffix, lr, hidden_layers, epochs):
     # Load params
     if model_restart:
         with open(op.join("models", model_restart+'.json'), "r") as f:
             params = json.load(f)
     else:
         params= dict(
-            hidden_layers = [4,4],
+            hidden_layers = [8],
             epochs = 100000,
             batch_size = 500,
-            lr=6e-4
+            lr=1e-3,
+            weight_decay=0.01
         )
     if lr:
         params['lr'] = lr
@@ -77,24 +86,26 @@ def main(model_restart, lr, hidden_layers, epochs):
         hidden_layers = [int(l) for l in hidden_layers.split(',')]
 
     # Load data
-    loader, dataset, inp, out, msk, inp_mean, out_mean, inp_std, out_std, e231 = load_data("e231.csv", params)
-    writer = SummaryWriter()
+    loader, dataset, inp, out, inp_mean, out_mean, inp_std, out_std, e231 = load_data("../data/e231.csv", params)
+    writer = SummaryWriter(comment=("_" + filename_suffix) if filename_suffix else "")
 
     # Build model
     model = build_model(params["hidden_layers"])
+
+    model.input_mean.data = inp_mean
+    model.input_std.data = inp_std
+    model.output_mean.data = out_mean
+    model.output_std.data = out_std
+
     if model_restart:
         model.load_state_dict(torch.load(op.join("models", model_restart + ".mdl")))
 
-    # model = nn.Linear(2,3)
     opt = torch.optim.Adam(model.parameters(),
                         lr=params['lr'],
-                        weight_decay=0.001,
+                        weight_decay=params['weight_decay'],
                         betas=(0.9, 0.999), 
                         eps=1e-08
     )
-                        # momentum=0.9,
-                        # dampening=0.,
-                        # nesterov=True)
 
     # Train
     model.train()
@@ -110,8 +121,8 @@ def main(model_restart, lr, hidden_layers, epochs):
         for e in range(params["epochs"]):
             L = 0
             ite = 0
-            for i, o, m in loader:
-                loss = (((model(i) - o)*m)**2).sum()
+            for i, o in loader:
+                loss = (((model(i) - o))**2).sum()
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
@@ -127,11 +138,6 @@ def main(model_restart, lr, hidden_layers, epochs):
                 a.plot(inp.data[:,0], model(inp)[:,0].data, '+')
                 a.plot(inp.data[:,0], out[:,0].data, '+')
                 writer.add_figure("data_fit",f)
-                # f.savefig("tmp.png")
-                # a_.clear()
-                # a_.loglog(LL)
-                # f_.savefig(learning.png")
-                # writer.add_figure(f_)
 
     except KeyboardInterrupt:
         pass
@@ -142,7 +148,6 @@ def main(model_restart, lr, hidden_layers, epochs):
     with open(model_file_name[:-4]+'.json', "w") as f:
         params["epochs"] = e
         json.dump(params, f)
-    # import pdb; pdb.set_trace()
 
 if __name__ == "__main__":
     main()
